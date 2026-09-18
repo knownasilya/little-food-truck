@@ -276,7 +276,7 @@ just working locally:
   and close the Postgres connection pool before the process exits, instead
   of connections getting cut mid-query on every deploy. Verified with
   `docker stop` (see below) — shuts down cleanly in well under a second.
-- **A real, tested Dockerfile** (`apps/api/Dockerfile`) — multi-stage,
+- **A real, tested Dockerfile** (repo-root `Dockerfile`) — multi-stage,
   builds the web app (`apps/web`, `adapter-static`) and the API in the same
   build stage, and the runtime image is just the pruned API +
   `@little-food-truck/shared` workspace dependency (via `pnpm deploy`) plus
@@ -301,8 +301,7 @@ just working locally:
     permission error with no write access — running the underlying command
     directly sidesteps that (and is generally the safer pattern for a
     container's entrypoint regardless).
-  - Build it from the repo root: `docker build -f apps/api/Dockerfile -t
-    little-food-truck .`
+  - Build it from the repo root: `docker build -t little-food-truck .`
 
   Not yet done: a CI pipeline that builds and runs this image automatically
   — right now "tested" means "run by hand once," which is better than
@@ -320,11 +319,11 @@ simple case). This repo doesn't commit any GCP project ID, trigger, or
 credentials — that's the "I'll set that up later" part; what's here is just
 what the *repo* needs to be deployable once you do.
 
-**One Cloud Run service, one Dockerfile, one repo:** `apps/api/Dockerfile`
-builds both the API and the web app (`apps/web`'s `adapter-static` output)
-and the API serves the web build itself — see the `isProduction` block near
-the bottom of `apps/api/src/index.ts`, which mounts
-`@hono/node-server/serve-static` (with the same "exact file, else
+**One Cloud Run service, one Dockerfile, one repo:** the repo-root
+`Dockerfile` builds both the API and the web app (`apps/web`'s
+`adapter-static` output) and the API serves the web build itself — see the
+`isProduction` block near the bottom of `apps/api/src/index.ts`, which
+mounts `@hono/node-server/serve-static` (with the same "exact file, else
 `{path}/index.html`, else the SPA fallback" logic a static-file server like
 Caddy or nginx would do) after every real API route, so those always win and
 only genuinely unmatched paths fall through to it. `apps/mobile` is
@@ -334,16 +333,20 @@ service's public URL directly (see its own build docs).
 
 | Dockerfile | Build context | Listens on |
 |---|---|---|
-| `apps/api/Dockerfile` | repo root (`.`) | `$PORT` (reads it via `apps/api/src/lib/env.ts`) |
+| `Dockerfile` (repo root) | repo root (`.`) | `$PORT` (reads it via `apps/api/src/lib/env.ts`) |
 
-When connecting the service in the Cloud Run console, the "build
-configuration" step asks for the Dockerfile path and build context/source
-location — use `apps/api/Dockerfile` and repo root (`.`) for those, not the
-`apps/api` subdirectory as the source location. The Dockerfile is written to
-expect that (same as the existing local `docker build` command documented
-above), because the pnpm workspace's lockfile and `packages/shared`
-dependency live outside `apps/api`'s own folder, and the web build needs the
-whole `apps/web` tree too.
+The Dockerfile deliberately lives at the repo root, not nested under
+`apps/api/`, specifically so Cloud Run's "Continuously deploy" wizard finds
+it with its own defaults — no Dockerfile-path or source-location field to
+get right. (An earlier version of this lived at `apps/api/Dockerfile`; the
+console's Dockerfile-path field pointed at it fine, but in practice that
+also scoped the build *context* to that subdirectory, which silently broke
+`COPY . .` — `pnpm-lock.yaml`, `packages/shared`, and `apps/web` all live
+outside `apps/api/`, so the build failed with `ERR_PNPM_NO_LOCKFILE` well
+into the build rather than failing to find the Dockerfile at all. Root
+avoids the whole question.) If your console setup already has explicit
+Dockerfile-path/source-location fields filled in from before, clear them —
+the defaults now do the right thing on their own.
 
 Being one service now also means the session cookie's `SameSite=Lax`
 requirement (see the comment in `apps/api/src/lib/auth.ts`) is a non-issue —
@@ -401,10 +404,10 @@ misconfigured one.
    mobile/desktop origins (`apps/api/src/index.ts`).
 
 `VITE_API_URL`, the one Docker build arg from before, is no longer something
-you need to set for this — it defaults to `""` (same origin) in
-`apps/api/Dockerfile`, which is correct for this single-service setup as-is.
-Only pass `--build-arg VITE_API_URL=https://...` if the web build ever needs
-to be deployed somewhere other than this same API.
+you need to set for this — it defaults to `""` (same origin) in the
+repo-root `Dockerfile`, which is correct for this single-service setup
+as-is. Only pass `--build-arg VITE_API_URL=https://...` if the web build
+ever needs to be deployed somewhere other than this same API.
 
 ### Environment variables
 
@@ -471,8 +474,8 @@ order it'd bite you:
   localhost, backed by a *local* Supabase (Docker). The repo is
   container-ready for Google Cloud Run's git-based continuous deployment —
   see "Deploying to Google Cloud Run" above for the full runbook (env vars,
-  bootstrap order, the single-Dockerfile setup). Nothing about
-  `apps/api/Dockerfile` is Cloud-Run-specific though, so a small VM, Fly.io,
+  bootstrap order, the single-Dockerfile setup). Nothing about the
+  `Dockerfile` is Cloud-Run-specific though, so a small VM, Fly.io,
   Railway, etc. work too. The web app doesn't have to be served by the API
   either — `apps/web`'s `adapter-static` output is plain static files, so
   any static host (Vercel, Netlify, Cloudflare Pages — just wire `200.html`

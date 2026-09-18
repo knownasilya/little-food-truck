@@ -16,8 +16,18 @@
 # already set up for local dev, and one less build pipeline to keep in sync.
 # The web app is the one real build step here (Vite/adapter-static).
 #
-# Build from the repo root, not this directory:
-#   docker build -f apps/api/Dockerfile -t little-food-truck .
+# Lives at the repo root (not apps/api/) specifically so Cloud Run's
+# "Continuously deploy from a repository" wizard finds it with zero manual
+# build-config fields: its default is context = repo root, filename =
+# `Dockerfile`, exactly what's here. A nested Dockerfile (apps/api/Dockerfile,
+# where this used to live) needs the console's Dockerfile-path field pointed
+# at it explicitly — and in practice that also scoped the build *context* to
+# that subdirectory, breaking `COPY . .` (missing pnpm-lock.yaml,
+# packages/shared, apps/web — "ERR_PNPM_NO_LOCKFILE" downstream). Root avoids
+# the whole question.
+#
+# Build from the repo root:
+#   docker build -t little-food-truck .
 #
 # VITE_API_URL is baked into the web build at build time (Vite inlines
 # import.meta.env.* — there's no "runtime env var" for a static bundle) and
