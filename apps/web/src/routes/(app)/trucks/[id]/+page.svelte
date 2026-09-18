@@ -47,11 +47,15 @@
 		);
 	});
 
-	// The share link is served by the API, not the web app — see
-	// apps/api/src/routes/share.ts. Unlike the web app (adapter-static, no
+	// The share link is served by the API, not the SPA — see
+	// apps/api/src/routes/share.ts. Unlike the SPA (adapter-static, no
 	// runtime server), the API can render a real, always-current Open Graph
-	// preview for any truck, including ones created seconds ago.
-	const shareUrl = `${apiBaseUrl}/t/${truckId}`;
+	// preview for any truck, including ones created seconds ago. In
+	// production apiBaseUrl is "" (same origin — the API serves this app
+	// itself), so the shareable link needs the page's own origin instead;
+	// in local dev apiBaseUrl is already the API's own absolute URL, which
+	// is genuinely a different origin from the web dev server.
+	const shareUrl = `${apiBaseUrl || window.location.origin}/t/${truckId}`;
 
 	async function copyShareLink() {
 		try {

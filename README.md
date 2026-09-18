@@ -305,7 +305,7 @@ just working locally:
 
 ## Deploying to Google Cloud Run
 
-Both apps are container-ready for Cloud Run's **"Continuously deploy from a
+The repo is container-ready for Cloud Run's **"Continuously deploy from a
 repository"** flow — connect a GitHub/GitLab/Bitbucket repo once in the Cloud
 Run console and every push to the branch you pick triggers a new build +
 revision automatically (Cloud Run manages the underlying Cloud Build trigger
@@ -314,52 +314,67 @@ simple case). This repo doesn't commit any GCP project ID, trigger, or
 credentials — that's the "I'll set that up later" part; what's here is just
 what the *repo* needs to be deployable once you do.
 
-**Two separate Cloud Run services, one repo:**
+**One Cloud Run service, one Dockerfile, one repo:** `apps/api/Dockerfile`
+builds both the API and the web app (`apps/web`'s `adapter-static` output)
+and the API serves the web build itself — see the `isProduction` block near
+the bottom of `apps/api/src/index.ts`, which mounts
+`@hono/node-server/serve-static` (with the same "exact file, else
+`{path}/index.html`, else the SPA fallback" logic a static-file server like
+Caddy or nginx would do) after every real API route, so those always win and
+only genuinely unmatched paths fall through to it. `apps/mobile` is
+unaffected by any of this — it's a separate Tauri build, not deployed to
+Cloud Run at all, and keeps pointing its own `VITE_API_URL` at this
+service's public URL directly (see its own build docs).
 
-| Service | Dockerfile | Build context | Listens on |
-|---|---|---|---|
-| API | `apps/api/Dockerfile` | repo root (`.`) | `$PORT` (already reads it via `apps/api/src/lib/env.ts`) |
-| Web | `apps/web/Dockerfile` | repo root (`.`) | `$PORT` (Caddy — see `apps/web/Caddyfile`) |
+| Dockerfile | Build context | Listens on |
+|---|---|---|
+| `apps/api/Dockerfile` | repo root (`.`) | `$PORT` (reads it via `apps/api/src/lib/env.ts`) |
 
-When connecting each service in the Cloud Run console, the "build
-configuration" step asks for the Dockerfile path and build context — use the
-paths above for each, not the app subdirectory. Both Dockerfiles are written
-to expect that (same pattern as the existing local `docker build` commands
-documented above), because the pnpm workspace's lockfile and
-`packages/shared` dependency live outside each app's own folder.
+When connecting the service in the Cloud Run console, the "build
+configuration" step asks for the Dockerfile path and build context/source
+location — use `apps/api/Dockerfile` and repo root (`.`) for those, not the
+`apps/api` subdirectory as the source location. The Dockerfile is written to
+expect that (same as the existing local `docker build` command documented
+above), because the pnpm workspace's lockfile and `packages/shared`
+dependency live outside `apps/api`'s own folder, and the web build needs the
+whole `apps/web` tree too.
 
-`apps/web/Dockerfile` was actually built and run (not just written) while
-putting this together, same discipline as `apps/api/Dockerfile` above — which
-is how two real bugs got caught:
+Being one service now also means the session cookie's `SameSite=Lax`
+requirement (see the comment in `apps/api/src/lib/auth.ts`) is a non-issue —
+there's no second origin for it to fail to cross. That used to need a
+custom-domain workaround when the API and web app were two separate
+`*.run.app` services; not anymore.
 
-- **The marketing homepage prerenders at *build* time by making a real fetch
-  to `VITE_API_URL`** (checking auth session — see `ensureSessionLoaded()` in
-  `apps/web/src/lib/auth.svelte.ts`), since `/` opts into real SSR/prerender
-  (see `apps/web/src/routes/+page.ts`). That fetch had no `.catch`, so an
-  unreachable API at build time (a placeholder URL, a real API that happened
-  to be down, ...) crashed the whole build with an unhandled rejection
-  instead of just rendering the signed-out version — which is what should
-  happen either way, since prerendering never has a real user's session.
-  Fixed by catching the failure and falling back to `session = null` (same
-  fix applied to `apps/mobile`'s copy of this function, since it's the same
-  pattern even though mobile has no prerendering to crash). This also means
-  `VITE_API_URL` has to point somewhere *actually reachable* at build time —
-  see the bootstrap order below.
-- **The Caddyfile's `try_files` fallback swallowed "/" itself.** The first
-  version was `try_files {path} /200.html` — for the root request, `{path}`
-  is literally `/`, which isn't a real filename, so it fell straight through
-  to the SPA shell (`200.html`) instead of ever finding the real prerendered
-  `index.html`. Fixed by adding `{path}/index.html` as a middle candidate.
-  Confirmed against the real `caddy:2-alpine` binary and this project's real
-  build output, not just by reading Caddy's docs — `curl`'d `/` (22,989
-  bytes, the real marketing page), a top-level SPA route, and a nested one
-  (`/trucks/abc123`, both 1,164 bytes, the SPA shell), plus the immutable
-  asset cache header.
+This merged Dockerfile was actually built and run (not just written) while
+putting it together, same discipline as the rest of this section — `docker
+build`, then `docker run` against the local Supabase stack (via
+`host.docker.internal`), then `curl` against the real container: `/` came
+back as the real 22,988-byte prerendered marketing page (not the SPA
+shell), `/browse` and `/trucks/abc123` both correctly fell back to the
+1,163-byte SPA shell, `/api/trucks` returned real data through the same
+port, `/t/:id` (the share-link route, also mounted at `/`) still rendered
+its Open Graph preview instead of being swallowed by the static-file
+fallback, and a hashed `/_app/immutable/*` asset came back with the
+`Cache-Control: public, max-age=31536000, immutable` header intact. The one
+genuine bug this same testing already caught, before the API ever served
+its own web build: **the marketing homepage prerenders at *build* time by
+making a real fetch to `VITE_API_URL`** (checking auth session — see
+`ensureSessionLoaded()` in `apps/web/src/lib/auth.svelte.ts`), since `/`
+opts into real SSR/prerender (see `apps/web/src/routes/+page.ts`). That
+fetch had no `.catch`, so an unreachable API at build time crashed the whole
+build with an unhandled rejection instead of just rendering the signed-out
+version — which is what should happen either way, since prerendering never
+has a real user's session. Fixed by catching the failure and falling back
+to `session = null` (same fix applied to `apps/mobile`'s copy of this
+function, since it's the same pattern even though mobile has no
+prerendering to crash). This still matters here: `VITE_API_URL` now
+defaults to `""` (same origin — nothing to prepend, since the API serves
+this app itself) rather than a real absolute URL, so that build-time fetch
+is *always* an unreachable relative path during the Docker build — the
+catch is what keeps that from crashing every build, not just a
+misconfigured one.
 
 ### Order of operations (first deploy)
-
-The two services reference each other, so there's an unavoidable
-bootstrapping order:
 
 1. **Create a real Supabase project** at [supabase.com](https://supabase.com)
    (Database + Auth + Storage) — Cloud Run has no database of its own, and
@@ -368,39 +383,26 @@ bootstrapping order:
    `.env` at the cloud project temporarily to do this), then check Auth's
    Site URL / redirect allow-list and JWT expiry in that project's dashboard
    — the values in `supabase/config.toml` are local-dev-only fakes.
-2. **Deploy the API service first**, with `WEB_ORIGIN` set to a placeholder
-   (you don't have the web service's URL yet) and the real Supabase/Resend
-   values (see the env var table below). Note the URL Cloud Run assigns it.
-3. **Deploy the web service**, passing that API URL as the `VITE_API_URL`
-   **build arg** (Cloud Run's repo-connect UI has a place for Docker build
-   args/substitutions per service) — not a runtime env var, since Vite
-   inlines `import.meta.env.*` into the static bundle at build time. Note
-   the URL Cloud Run assigns the web service too.
-4. **Redeploy the API** with `WEB_ORIGIN` updated to the web service's real
-   URL. Cloud Run makes this a one-click "deploy new revision," not a
-   rebuild from scratch, since it's just an env var change.
+2. **Deploy the service**, with `WEB_ORIGIN` set to a placeholder (you don't
+   have its real URL yet on the first deploy) and the real Supabase/Resend
+   values (see the env var table below).
+3. **Redeploy** with `WEB_ORIGIN` updated to the URL Cloud Run actually
+   assigned (or a custom domain you've mapped to it). Cloud Run makes this a
+   one-click "deploy new revision," not a rebuild from scratch, since it's
+   just an env var change. `WEB_ORIGIN` still matters even same-origin — it
+   feeds the `/t/:id` share-link route's Open Graph `appUrl`/`imageUrl`
+   (`apps/api/src/routes/share.ts`) and the CORS allow-list for Tauri's
+   mobile/desktop origins (`apps/api/src/index.ts`).
 
-### The cookie gotcha (read this before you're confused why sign-in silently fails)
-
-Cloud Run's default `*.run.app` URLs are almost certainly **not** enough for
-this app to actually work end-to-end. The session cookie is
-`SameSite=Lax` (see the comment in `apps/api/src/lib/auth.ts`), which
-requires the web app and API to share a *registrable domain* — and
-`run.app` is itself on the public suffix list (like `github.io` or
-`vercel.app`), so `little-food-truck-api-xxxx.a.run.app` and
-`little-food-truck-web-xxxx.a.run.app` count as two unrelated sites to the
-browser, not two subdomains of one site. Sign-in will appear to succeed
-(the API sets the cookie fine) but every subsequent request from the web
-app won't carry it, so the user just looks signed-out again.
-
-Fix: map **custom domains** to both services under one domain you control
-(Cloud Run → "Manage Custom Domains") — e.g. `app.yourdomain.com` for web,
-`api.yourdomain.com` for the API — and point `WEB_ORIGIN`/`VITE_API_URL` at
-those instead of the `*.run.app` URLs before calling this "done."
+`VITE_API_URL`, the one Docker build arg from before, is no longer something
+you need to set for this — it defaults to `""` (same origin) in
+`apps/api/Dockerfile`, which is correct for this single-service setup as-is.
+Only pass `--build-arg VITE_API_URL=https://...` if the web build ever needs
+to be deployed somewhere other than this same API.
 
 ### Environment variables
 
-Set these as the API service's env vars in Cloud Run — put anything
+Set these as the service's env vars in Cloud Run — put anything
 secret-shaped (`SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET`,
 `DATABASE_URL`, `RESEND_API_KEY`, `VAPID_PRIVATE_KEY`) in **Secret Manager**
 and reference it from the service config rather than typing it in as a
@@ -409,13 +411,10 @@ anyone with viewer access on the project:
 
 | Var | Where it comes from |
 |---|---|
-| `WEB_ORIGIN` | the web service's real URL (custom domain — see above) |
+| `WEB_ORIGIN` | this service's own real URL (custom domain, or the `*.run.app` URL Cloud Run assigns it) |
 | `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET` | your cloud Supabase project's Settings → API / Database |
 | `RESEND_API_KEY`, `RESEND_FROM_EMAIL` | resend.com, for real password-reset email in production — see "Local email testing" above for what happens if this is unset |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | `npx web-push generate-vapid-keys` — don't reuse the local dev keypair already in `apps/api/.env.example` |
-
-The web service only needs the one build arg (`VITE_API_URL`) described
-above — nothing at runtime, since it's just Caddy serving static files.
 
 ### Other Cloud Run–specific notes
 

@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { serve } from "@hono/node-server";
+import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
@@ -12,7 +13,7 @@ import { authRoute } from "./routes/auth.js";
 import { meRoute } from "./routes/me.js";
 import { shareRoute } from "./routes/share.js";
 import { trucksRoute } from "./routes/trucks.js";
-import { env } from "./lib/env.js";
+import { env, isProduction } from "./lib/env.js";
 import { getVapidPublicKey } from "./lib/push.js";
 import { ensureUploadsBucket } from "./lib/uploads.js";
 
@@ -69,6 +70,34 @@ const app = new Hono()
   .route("/api/admin", adminRoute);
 
 export type AppType = typeof app;
+
+// This server also serves the built web app (apps/web/build, copied into
+// ./public by the Dockerfile) — one Cloud Run service instead of a second
+// one just for static files, and same-origin means no cross-origin cookie
+// gotcha for the session cookie. Registered after every API route above so
+// those always win; only two paths can fall through to here: a real static
+// asset (found on disk, served as-is — immutable cache headers for
+// SvelteKit's hashed _app/immutable/* build output, so browsers never
+// re-fetch an unchanged file) or anything else (an SPA route with no file
+// on disk, e.g. /browse or /trucks/abc123 — falls through to 200.html, the
+// adapter-static SPA fallback, and the client-side router takes over). Not
+// mounted in local dev: nothing's ever built into ./public there, and the
+// Vite dev server on :5173 serves the app instead.
+if (isProduction) {
+  app
+    .use(
+      "*",
+      serveStatic({
+        root: "./public",
+        onFound: (path, c) => {
+          if (path.includes("/_app/immutable/")) {
+            c.header("Cache-Control", "public, max-age=31536000, immutable");
+          }
+        },
+      }),
+    )
+    .use("*", serveStatic({ root: "./public", path: "200.html" }));
+}
 
 // Avatars, truck/menu/post photos all go straight to Supabase Storage now
 // (see lib/uploads.ts) — this makes sure the bucket exists before the first

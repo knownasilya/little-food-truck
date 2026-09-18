@@ -1,16 +1,30 @@
-# Builds a self-contained image for just the API out of the pnpm
-# workspace, using `pnpm deploy` to prune node_modules down to what
-# @little-food-truck/api (and its workspace dependency, @little-food-truck/shared)
-# actually needs — not the whole monorepo's web/mobile toolchains.
+# Builds a single self-contained image that serves both the API and the
+# built web app (apps/web/build, adapter-static) — one Cloud Run service,
+# one Dockerfile, no separate web/Caddy image. The API serves the web
+# build's static files itself (see the isProduction block near the bottom
+# of apps/api/src/index.ts) once same-origin, that also removes the
+# SameSite cookie gotcha two separate *.run.app services used to have.
 #
-# Like the rest of this monorepo, there's no separate TypeScript build step:
-# both packages run straight off their .ts source via tsx (see each
-# package.json's "main"/"exports" pointing at src/index.ts, and the "start"
+# Uses `pnpm deploy` to prune the API's own node_modules down to what
+# @little-food-truck/api (and its workspace dependency, @little-food-truck/shared)
+# actually needs — not the whole monorepo's mobile toolchain.
+#
+# Like the rest of this monorepo, there's no separate TypeScript build step
+# for the API — it runs straight off its .ts source via tsx (see the
+# package.json "main"/"exports" pointing at src/index.ts, and the "start"
 # script below) — consistent with how apps/api and packages/shared are
 # already set up for local dev, and one less build pipeline to keep in sync.
+# The web app is the one real build step here (Vite/adapter-static).
 #
 # Build from the repo root, not this directory:
-#   docker build -f apps/api/Dockerfile -t little-food-truck-api .
+#   docker build -f apps/api/Dockerfile -t little-food-truck .
+#
+# VITE_API_URL is baked into the web build at build time (Vite inlines
+# import.meta.env.* — there's no "runtime env var" for a static bundle) and
+# defaults to "" here, meaning "same origin as whatever serves this page" —
+# correct for this single-service setup without passing anything. Only
+# override it with --build-arg VITE_API_URL=https://... if the web build
+# is ever deployed somewhere other than this same API.
 
 # @supabase/supabase-js eagerly initializes a Realtime client (even though
 # this app never uses it — only .auth and .storage) and that client needs
@@ -26,12 +40,18 @@ FROM base AS build
 WORKDIR /repo
 COPY . .
 RUN pnpm install --frozen-lockfile
+
+ARG VITE_API_URL=""
+ENV VITE_API_URL=${VITE_API_URL}
+RUN pnpm --filter @little-food-truck/web build
+
 RUN pnpm --filter @little-food-truck/api deploy --legacy --prod /out
 
 FROM base AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=build --chown=node:node /out .
+COPY --from=build --chown=node:node /repo/apps/web/build ./public
 USER node
 EXPOSE 8787
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
