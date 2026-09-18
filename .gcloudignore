@@ -1,0 +1,25 @@
+# Used by `gcloud builds submit` / `gcloud run deploy --source` (uploading
+# local source directly, as an alternative to the git-connected continuous
+# deployment flow described in the README) — keeps the upload to Cloud Build
+# small. Cloud Run's own git integration doesn't read this file; it just
+# builds whatever Cloud Build checks out from the repo, same as if this file
+# didn't exist.
+#:!.gcloudignore
+.git
+.gitignore
+node_modules
+**/node_modules
+.turbo
+.svelte-kit
+build
+dist
+apps/api/data
+apps/web/build
+apps/mobile/src-tauri/target
+apps/mobile/src-tauri/gen
+supabase/.temp
+supabase/.branches
+*.log
+.env
+.env.*
+!.env.example

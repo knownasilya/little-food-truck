@@ -1,0 +1,33 @@
+# Cloud Run sets $PORT (8080 by default) and requires the container to
+# listen on exactly that port — Caddy reads env vars natively via {$PORT},
+# no template/envsubst step needed (unlike nginx).
+:{$PORT}
+
+root * /srv
+encode gzip zstd
+
+# SvelteKit's own hashed build assets (_app/immutable/...) never change
+# content under a given filename — safe to cache forever.
+@immutable {
+	path /_app/immutable/*
+}
+header @immutable Cache-Control "public, max-age=31536000, immutable"
+
+# The marketing homepage ("/") is genuinely prerendered to index.html. Every
+# other app route is a client-side SPA route with no matching file on disk,
+# so it falls back to 200.html (not index.html — see the adapter-static
+# `fallback` option in vite.config.ts) and the SvelteKit router takes over.
+# try_files does an internal rewrite (serves the matched file's content)
+# without changing the URL the browser shows, which is what client-side
+# routing needs. The middle candidate, {path}/index.html, is what makes "/"
+# itself resolve to the real prerendered index.html instead of falling
+# straight through to 200.html — without it, every request including "/"
+# gets the SPA shell and the prerendered marketing page is never served.
+# Verified against the real caddy:2-alpine binary, both the Caddyfile
+# syntax (`caddy validate`) and the actual routing behavior (`caddy run` +
+# curl against this project's real build output for "/", a top-level SPA
+# route, and a nested one) — try_files is a standalone top-level directive
+# here, not a file_server sub-option, despite what some older docs/examples
+# suggest.
+try_files {path} {path}/index.html /200.html
+file_server

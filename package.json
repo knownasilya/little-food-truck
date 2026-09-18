@@ -1,0 +1,31 @@
+{
+  "name": "little-food-truck",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev:api": "pnpm --filter @little-food-truck/api dev",
+    "dev:web": "pnpm --filter @little-food-truck/web dev",
+    "dev:mobile": "pnpm --filter @little-food-truck/mobile tauri dev",
+    "dev:mail": "pnpm --filter @little-food-truck/api maildev",
+    "db:push": "pnpm --filter @little-food-truck/api db:push",
+    "db:seed": "pnpm --filter @little-food-truck/api db:seed",
+    "build": "pnpm -r build",
+    "check": "pnpm -r check",
+    "lint": "pnpm -r lint",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "pnpm@10.18.2",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
+  }
+}
