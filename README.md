@@ -277,12 +277,18 @@ just working locally:
   of connections getting cut mid-query on every deploy. Verified with
   `docker stop` (see below) — shuts down cleanly in well under a second.
 - **A real, tested Dockerfile** (`apps/api/Dockerfile`) — multi-stage,
-  pruned to just the API + its `@little-food-truck/shared` workspace
-  dependency via `pnpm deploy`, runs as a non-root user, has a `HEALTHCHECK`
-  wired to `/health`. This was actually built and run against the local
-  Supabase stack while putting this together, not just written and assumed
-  to work — which is how two real bugs got caught before they'd have hit a
-  real deploy:
+  builds the web app (`apps/web`, `adapter-static`) and the API in the same
+  build stage, and the runtime image is just the pruned API +
+  `@little-food-truck/shared` workspace dependency (via `pnpm deploy`) plus
+  the web build's static output — not the whole monorepo's node_modules or
+  devDependencies. One image, one Cloud Run service, no separate web
+  container; see "Deploying to Google Cloud Run" below for why and how the
+  API ends up serving the web build itself. Runs as a non-root user, has a
+  `HEALTHCHECK` wired to `/health`. This was actually built and run against
+  the local Supabase stack while putting this together, not just written and
+  assumed to work — which is how the real bugs listed in that section got
+  caught before they'd have hit a real deploy, including two from back when
+  this was still API-only:
   - **Needs Node 24, not 20.** `@supabase/supabase-js` eagerly initializes a
     Realtime client even though this app only uses `.auth`/`.storage`, and
     that client requires a native `WebSocket` implementation — only present
@@ -296,7 +302,7 @@ just working locally:
     directly sidesteps that (and is generally the safer pattern for a
     container's entrypoint regardless).
   - Build it from the repo root: `docker build -f apps/api/Dockerfile -t
-    little-food-truck-api .`
+    little-food-truck .`
 
   Not yet done: a CI pipeline that builds and runs this image automatically
   — right now "tested" means "run by hand once," which is better than
@@ -462,15 +468,17 @@ order it'd bite you:
   payment flow. Adding one means a payment processor (Stripe et al.), which
   again needs an account only you can create.
 - **Deployment.** Nothing here is hosted anywhere yet; it only exists on
-  localhost, backed by a *local* Supabase (Docker). Both apps are
+  localhost, backed by a *local* Supabase (Docker). The repo is
   container-ready for Google Cloud Run's git-based continuous deployment —
   see "Deploying to Google Cloud Run" above for the full runbook (env vars,
-  the API/web bootstrap order, and the `SameSite` cookie + custom-domain
-  gotcha in particular). Nothing about the Dockerfiles is Cloud-Run-specific
-  though, so a small VM, Fly.io, Railway, etc. work too for the API, and any
-  static host (Vercel, Netlify, Cloudflare Pages — just wire `200.html` as
-  the SPA fallback, not the default `index.html`) works for the web build
-  without using `apps/web/Dockerfile` at all.
+  bootstrap order, the single-Dockerfile setup). Nothing about
+  `apps/api/Dockerfile` is Cloud-Run-specific though, so a small VM, Fly.io,
+  Railway, etc. work too. The web app doesn't have to be served by the API
+  either — `apps/web`'s `adapter-static` output is plain static files, so
+  any static host (Vercel, Netlify, Cloudflare Pages — just wire `200.html`
+  as the SPA fallback, not the default `index.html`) works too, passing the
+  deployed API's real URL as the `VITE_API_URL` build arg instead of the
+  same-origin default.
 - **Map tiles for production.** The map view uses OpenStreetMap's free tile
   server, which is fine for development but not for real traffic — see the
   note above.
