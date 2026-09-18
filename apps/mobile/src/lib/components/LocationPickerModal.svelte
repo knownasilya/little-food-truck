@@ -4,6 +4,7 @@
 	import 'maplibre-gl/dist/maplibre-gl.css';
 	import { onDestroy, onMount } from 'svelte';
 	import { getCurrentCoords } from '$lib/geo';
+	import { BASEMAP_STYLE } from '$lib/map';
 
 	let {
 		initialLat = 30.2672,
@@ -17,21 +18,6 @@
 		onConfirm: (coords: { lat: number; lng: number }) => void;
 	} = $props();
 
-	// Free OSM raster tiles — no API key needed, same as TruckMap.svelte.
-	const OSM_STYLE: maplibregl.StyleSpecification = {
-		version: 8,
-		sources: {
-			osm: {
-				type: 'raster',
-				tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-				tileSize: 256,
-				attribution:
-					'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors'
-			}
-		},
-		layers: [{ id: 'osm', type: 'raster', source: 'osm' }]
-	};
-
 	let container: HTMLDivElement;
 	let map: maplibregl.Map | undefined;
 	let locating = $state(false);
@@ -40,7 +26,7 @@
 	onMount(() => {
 		map = new maplibregl.Map({
 			container,
-			style: OSM_STYLE,
+			style: BASEMAP_STYLE,
 			center: [initialLng, initialLat],
 			zoom: 14,
 			attributionControl: false

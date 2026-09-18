@@ -3,6 +3,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import * as maplibregl from 'maplibre-gl';
 	import 'maplibre-gl/dist/maplibre-gl.css';
+	import { BASEMAP_STYLE } from '$lib/map';
 
 	let {
 		trucks,
@@ -18,23 +19,6 @@
 	let map: maplibregl.Map | undefined;
 	let markers: maplibregl.Marker[] = [];
 	let ready = $state(false);
-
-	// Free OSM raster tiles — no API key needed. Swap for a vector style from
-	// MapTiler/Stadia Maps/etc. (with your own key) before shipping to
-	// production; OSM's tile server isn't meant for heavy production traffic.
-	const OSM_STYLE: maplibregl.StyleSpecification = {
-		version: 8,
-		sources: {
-			osm: {
-				type: 'raster',
-				tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-				tileSize: 256,
-				attribution:
-					'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors'
-			}
-		},
-		layers: [{ id: 'osm', type: 'raster', source: 'osm' }]
-	};
 
 	function escapeHtml(value: string): string {
 		return value.replace(
@@ -126,7 +110,7 @@
 	onMount(() => {
 		map = new maplibregl.Map({
 			container,
-			style: OSM_STYLE,
+			style: BASEMAP_STYLE,
 			center: [-97.7431, 30.2672],
 			zoom: 11,
 			attributionControl: false
