@@ -42,8 +42,17 @@
 				userLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
 				locatingMap = false;
 			},
-			() => {
-				mapLocationError = 'Could not read your location. Check location permissions.';
+			(err) => {
+				console.error('geolocation error', err);
+				// PERMISSION_DENIED (code 1) fires immediately, with no browser
+				// prompt, whenever the site's location permission is already set
+				// to "Block" (from a past denial) or the OS has location services
+				// off for this browser — there's nothing our own retry can fix,
+				// the user has to clear that in browser/OS settings first.
+				mapLocationError =
+					err.code === err.PERMISSION_DENIED
+						? "Location is blocked for this site. Check your browser's site settings (and your OS location settings) and try again."
+						: 'Could not read your location. Try again in a moment.';
 				locatingMap = false;
 			}
 		);

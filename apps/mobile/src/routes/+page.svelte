@@ -36,8 +36,19 @@
 		locatingMap = true;
 		try {
 			userLocation = await getCurrentCoords();
-		} catch {
-			mapLocationError = 'Could not read your location. Check location permissions.';
+		} catch (err) {
+			console.error('geolocation error', err);
+			// A plain "permission was denied" (thrown by getCurrentCoords()'s
+			// Tauri branch) or a GeolocationPositionError with code 1 (the web
+			// fallback branch) both mean the permission is already blocked —
+			// retrying won't help, the user has to clear it in browser/OS
+			// settings first.
+			const denied =
+				(err instanceof Error && err.message.includes('denied')) ||
+				(typeof err === 'object' && err !== null && 'code' in err && err.code === 1);
+			mapLocationError = denied
+				? "Location is blocked for this app. Check your browser's site settings (and your OS location settings) and try again."
+				: 'Could not read your location. Try again in a moment.';
 		} finally {
 			locatingMap = false;
 		}
