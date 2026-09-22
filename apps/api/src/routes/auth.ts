@@ -63,7 +63,12 @@ export const authRoute = createApp()
     });
 
     if (input.role === "truck") {
-      await db.insert(truckProfiles).values({ userId, name: input.displayName });
+      // Self-signed-up trucks own their account from the start — there's no
+      // admin-issued claim step to go through (see routes/claim.ts and the
+      // truckProfiles.claimedAt comment in db/schema.ts), so this is
+      // "claimed" immediately rather than left null like an admin-added
+      // placeholder would be.
+      await db.insert(truckProfiles).values({ userId, name: input.displayName, claimedAt: new Date() });
     } else {
       await db.insert(customerProfiles).values({ userId });
     }

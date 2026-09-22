@@ -370,8 +370,93 @@ export const adminTruckSchema = z.object({
   averageRating: z.number().nullable(),
   reviewCount: z.number(),
   createdAt: z.string(),
+  // Claim flow (see truckProfiles.claimedAt in db/schema.ts). claimUrl is
+  // only present for an unclaimed truck, so the admin can copy/resend it —
+  // it disappears once claimed (there's nothing left to claim).
+  claimed: z.boolean(),
+  claimEmail: z.string().nullable(),
+  claimUrl: z.string().nullable(),
+  pendingRequestCount: z.number(),
 });
 export type AdminTruck = z.infer<typeof adminTruckSchema>;
+
+// POST /api/admin/trucks — an admin adding a not-yet-claimed truck listing.
+// ownerEmail is optional: given, the claim link is emailed to it; omitted,
+// the admin gets the link back directly to share however they've already
+// verified reaches the real owner (see routes/admin.ts and lib/email.ts).
+export const adminCreateTruckSchema = z.object({
+  name: z.string().min(1).max(120),
+  cuisine: cuisineType,
+  description: z.string().max(2000).optional().default(""),
+  lat: z.number().min(-90).max(90).optional(),
+  lng: z.number().min(-180).max(180).optional(),
+  website: z.string().max(300).optional(),
+  phone: z.string().max(30).optional(),
+  ownerEmail: z.string().email().optional(),
+});
+export type AdminCreateTruckInput = z.infer<typeof adminCreateTruckSchema>;
+
+// GET /api/claim/:token — public, unauthenticated preview of what's being
+// claimed, shown before someone submits a claim request for it.
+export const claimInfoSchema = z.object({
+  truckName: z.string(),
+  cuisine: cuisineType,
+});
+export type ClaimInfo = z.infer<typeof claimInfoSchema>;
+
+// POST /api/claim/:token — the text fields of a claim request (see
+// truckClaimRequests in db/schema.ts). Submitted as multipart/form-data
+// alongside a required proof-document file, so the file itself isn't part
+// of this schema — see the locally defined form schema in routes/claim.ts,
+// which extends this with it. Doesn't grant account access on its own; an
+// admin has to approve it first (routes/admin.ts).
+export const claimRequestInputSchema = z.object({
+  name: z.string().min(1).max(120),
+  email: z.string().email(),
+  phone: z.string().max(30).optional(),
+  // What the admin actually reads before approving — how they operate the
+  // truck, since when, anything that isn't already obvious from the proof
+  // document. Optional since the document is the real evidence; this is
+  // just context.
+  message: z.string().max(2000).optional().default(""),
+});
+export type ClaimRequestInput = z.infer<typeof claimRequestInputSchema>;
+
+// GET /api/claim/finish/:token — shown once an admin has approved a
+// specific claim request; the approved requester's email is fixed at this
+// point (it's what got approved), only a password is still needed.
+export const finishClaimInfoSchema = z.object({
+  truckName: z.string(),
+  email: z.string(),
+});
+export type FinishClaimInfo = z.infer<typeof finishClaimInfoSchema>;
+
+// POST /api/claim/finish/:token — sets the approved requester's password,
+// the last step that actually swaps in real credentials.
+export const finishClaimSchema = z.object({
+  password: z.string().min(8).max(200),
+});
+export type FinishClaimInput = z.infer<typeof finishClaimSchema>;
+
+// Admin-only view of a claim request — see apps/api/src/routes/admin.ts.
+export const adminClaimRequestSchema = z.object({
+  id: z.string(),
+  truckId: z.string(),
+  truckName: z.string(),
+  requesterName: z.string(),
+  requesterEmail: z.string(),
+  requesterPhone: z.string().nullable(),
+  message: z.string(),
+  status: z.enum(["pending", "approved", "denied"]),
+  // A short-lived signed URL to the uploaded permit/license image or PDF,
+  // generated fresh on each admin fetch (the storage bucket is private —
+  // see lib/uploads.ts#getClaimDocumentUrl) — null only if generating it
+  // failed, not as a normal state.
+  proofDocumentUrl: z.string().nullable(),
+  createdAt: z.string(),
+  decidedAt: z.string().nullable(),
+});
+export type AdminClaimRequest = z.infer<typeof adminClaimRequestSchema>;
 
 export const adminReviewSchema = z.object({
   id: z.string(),

@@ -1,6 +1,10 @@
 import type {
 	AccountUpdateInput,
+	ClaimInfo,
+	ClaimRequestInput,
 	DefaultLocationInput,
+	FinishClaimInfo,
+	FinishClaimInput,
 	ForgotPasswordInput,
 	ResetPasswordInput,
 	SignInInput,
@@ -180,4 +184,64 @@ export async function resetPassword(input: ResetPasswordInput): Promise<void> {
 			(body && "message" in body && String(body.message)) || "Could not reset password",
 		);
 	}
+}
+
+/** Loads the truck name/cuisine a claim token points to, for the /claim page to show before asking for claim details. */
+export async function getClaimInfo(token: string): Promise<ClaimInfo> {
+	const res = await client.api.claim[":token"].$get({ param: { token } });
+	if (!res.ok) {
+		const body = await res.json().catch(() => null);
+		throw new Error(
+			(body && "message" in body && String(body.message)) ||
+				"This claim link is invalid or expired",
+		);
+	}
+	return res.json();
+}
+
+/** Submits a claim request (name/email/phone/message + a proof document) — doesn't sign anyone in; an admin has to approve it first. */
+export async function submitClaimRequest(
+	token: string,
+	input: ClaimRequestInput & { proofDocument: File },
+): Promise<void> {
+	const res = await client.api.claim[":token"].$post({
+		param: { token },
+		form: {
+			name: input.name,
+			email: input.email,
+			...(input.phone ? { phone: input.phone } : {}),
+			message: input.message ?? "",
+			proofDocument: input.proofDocument,
+		},
+	});
+	if (!res.ok) {
+		const body = await res.json().catch(() => null);
+		throw new Error(
+			(body && "message" in body && String(body.message)) || "Could not submit that claim request",
+		);
+	}
+}
+
+/** Loads the truck name/email an approved-claim "finish" token points to, for the /claim/finish page. */
+export async function getFinishClaimInfo(token: string): Promise<FinishClaimInfo> {
+	const res = await client.api.claim.finish[":token"].$get({ param: { token } });
+	if (!res.ok) {
+		const body = await res.json().catch(() => null);
+		throw new Error(
+			(body && "message" in body && String(body.message)) || "This link is invalid or expired",
+		);
+	}
+	return res.json();
+}
+
+/** Sets the password for an approved claim request, finishing the claim and (if possible) signing the owner in. */
+export async function finishClaim(token: string, input: FinishClaimInput): Promise<void> {
+	const res = await client.api.claim.finish[":token"].$post({ param: { token }, json: input });
+	if (!res.ok) {
+		const body = await res.json().catch(() => null);
+		throw new Error(
+			(body && "message" in body && String(body.message)) || "Could not finish claiming this truck",
+		);
+	}
+	await loadSession();
 }

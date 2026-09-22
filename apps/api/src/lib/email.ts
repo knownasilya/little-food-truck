@@ -56,3 +56,71 @@ export async function sendPasswordResetEmail(to: string, resetUrl: string): Prom
     `,
   });
 }
+
+/**
+ * Sends the initial "claim your truck" invite an admin triggers from
+ * /admin when adding a listing with an owner email (see routes/admin.ts).
+ * Links to the claim-request form, not straight to account access — see
+ * the truckProfiles.claimToken comment in db/schema.ts for why. Same
+ * throw-on-failure contract as sendPasswordResetEmail — the caller decides
+ * what to do (fall back to returning the link directly) if this rejects.
+ */
+export async function sendClaimTruckEmail(
+  to: string,
+  truckName: string,
+  claimUrl: string,
+): Promise<void> {
+  if (!transport) throw new Error("No email transport is configured");
+
+  await transport.sendMail({
+    from: `Little Food Truck <${env.RESEND_FROM_EMAIL}>`,
+    to,
+    subject: `Claim "${truckName}" on Little Food Truck`,
+    text: `An admin added "${truckName}" to Little Food Truck and is inviting you to claim it, if it's yours.\n\nRequest your claim: ${claimUrl}\n\nYou'll need to show proof it's your truck (e.g. a seller's permit or business license) — an admin reviews every request before it's approved. This link expires in 14 days. If you weren't expecting this, you can ignore this email.`,
+    html: `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 480px; margin: 0 auto; color: #292524;">
+        <h1 style="font-size: 18px;">Claim "${truckName}"</h1>
+        <p>An admin added <strong>${truckName}</strong> to Little Food Truck and is inviting you to claim it, if it's yours.</p>
+        <p style="margin: 24px 0;">
+          <a href="${claimUrl}" style="background: #ea580c; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">
+            Request your claim
+          </a>
+        </p>
+        <p style="color: #78716c; font-size: 13px;">You'll need to show proof it's your truck (e.g. a seller's permit or business license) — an admin reviews every request before it's approved. This link expires in 14 days. If you weren't expecting this, you can safely ignore this email.</p>
+      </div>
+    `,
+  });
+}
+
+/**
+ * Sends the "your claim was approved" email once an admin approves a claim
+ * request (see routes/admin.ts) — the one time a password-setting link
+ * actually goes out, since only now has someone verified the requester is
+ * who they say they are.
+ */
+export async function sendClaimApprovedEmail(
+  to: string,
+  truckName: string,
+  finishUrl: string,
+): Promise<void> {
+  if (!transport) throw new Error("No email transport is configured");
+
+  await transport.sendMail({
+    from: `Little Food Truck <${env.RESEND_FROM_EMAIL}>`,
+    to,
+    subject: `You're approved to claim "${truckName}"`,
+    text: `An admin reviewed and approved your request to claim "${truckName}" on Little Food Truck.\n\nSet your password to finish: ${finishUrl}\n\nThis link expires in 7 days. If you weren't expecting this, you can ignore this email.`,
+    html: `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 480px; margin: 0 auto; color: #292524;">
+        <h1 style="font-size: 18px;">You're approved</h1>
+        <p>An admin reviewed and approved your request to claim <strong>${truckName}</strong> on Little Food Truck.</p>
+        <p style="margin: 24px 0;">
+          <a href="${finishUrl}" style="background: #ea580c; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">
+            Set your password
+          </a>
+        </p>
+        <p style="color: #78716c; font-size: 13px;">This link expires in 7 days. If you weren't expecting this, you can safely ignore this email.</p>
+      </div>
+    `,
+  });
+}

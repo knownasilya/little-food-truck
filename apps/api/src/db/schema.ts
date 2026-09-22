@@ -75,7 +75,70 @@ export const truckProfiles = pgTable("truck_profiles", {
   // see the PATCH /me/truck-profile handler in routes/me.ts.
   website: text("website"),
   phone: text("phone"),
+  // Claim flow (routes/admin.ts + routes/claim.ts + truckClaimRequests
+  // below) — lets an admin create a truck listing before its real owner has
+  // an account. An admin-created truck still gets a full auth user + users
+  // row immediately (everything downstream FKs to users.id — see the
+  // child-table comments below), just with a placeholder, non-deliverable
+  // email and a password nobody knows, so it exists but can't be signed
+  // into. claimedAt null means "still a placeholder." claimToken is the
+  // entry point an admin shares (or emails) with a prospective owner — it
+  // only gates *submitting a claim request* (see truckClaimRequests), not
+  // account access, and stays valid across multiple submissions (an admin
+  // might deny an impostor and let the real owner try the same link) until
+  // one request is actually approved and finished, at which point claiming
+  // (routes/claim.ts's finish step) clears it so it can't be reused.
+  claimToken: text("claim_token").unique(),
+  claimTokenExpiresAt: timestamp("claim_token_expires_at", { withTimezone: true }),
+  claimedAt: timestamp("claimed_at", { withTimezone: true }),
+  // The real owner's email the admin sent the claim link to, kept only for
+  // admin-facing display (e.g. "invited: owner@realtruck.com") — separate
+  // from users.email, which stays the placeholder address until claimed.
+  claimEmail: text("claim_email"),
 });
+
+// A real person's request to take over an admin-added truck listing (see
+// truckProfiles.claimToken above and routes/claim.ts) — deliberately never
+// hands over credentials on its own. Submitting one (POST /api/claim/:token)
+// just records who's asking and why; an admin has to approve or deny it
+// (routes/admin.ts) before anyone can actually sign in as that truck.
+// Several people can have a request pending for the same truck at once
+// (e.g. an impostor and the real owner both try the same shared link) — an
+// admin picks the legitimate one.
+export const truckClaimRequests = pgTable(
+  "truck_claim_requests",
+  {
+    id: uuid("id").primaryKey(),
+    truckId: uuid("truck_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    requesterName: text("requester_name").notNull(),
+    requesterEmail: text("requester_email").notNull(),
+    requesterPhone: text("requester_phone"),
+    // Storage path (private CLAIM_DOCUMENTS_BUCKET — see lib/uploads.ts) of
+    // a photo/PDF of a seller's permit or business license: the actual
+    // evidence an admin checks before approving. Required — a message
+    // alone isn't proof of anything.
+    proofDocumentPath: text("proof_document_path").notNull(),
+    // Free-text context alongside the document (how they operate the
+    // truck, since when, ...) — optional, since the document is the real
+    // evidence and this is just color.
+    message: text("message").notNull().default(""),
+    status: text("status", { enum: ["pending", "approved", "denied"] })
+      .notNull()
+      .default("pending"),
+    // Set on approval — a second, short-lived token emailed to
+    // requesterEmail (separate from truckProfiles.claimToken, which only
+    // ever proved "an admin sent me this link," not "an admin approved
+    // *me* specifically") that lets the approved requester actually set a
+    // password and finish claiming. Null until approved; cleared once used.
+    setPasswordToken: text("set_password_token").unique(),
+    setPasswordTokenExpiresAt: timestamp("set_password_token_expires_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+  },
+  (t) => [index("truck_claim_requests_truck_idx").on(t.truckId)],
+);
 
 export const customerProfiles = pgTable("customer_profiles", {
   userId: uuid("user_id")

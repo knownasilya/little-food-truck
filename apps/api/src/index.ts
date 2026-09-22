@@ -10,12 +10,13 @@ import { HTTPException } from "hono/http-exception";
 import { sql as dbClient, closeDb } from "./db/client.js";
 import { adminRoute } from "./routes/admin.js";
 import { authRoute } from "./routes/auth.js";
+import { claimRoute } from "./routes/claim.js";
 import { meRoute } from "./routes/me.js";
 import { shareRoute } from "./routes/share.js";
 import { trucksRoute } from "./routes/trucks.js";
 import { env, isProduction } from "./lib/env.js";
 import { getVapidPublicKey } from "./lib/push.js";
-import { ensureUploadsBucket } from "./lib/uploads.js";
+import { ensureClaimDocumentsBucket, ensureUploadsBucket } from "./lib/uploads.js";
 
 // The web SPA runs at WEB_ORIGIN. Tauri runs the same SPA, but from a
 // different origin per platform/mode: the Vite dev server's own port in
@@ -67,7 +68,8 @@ const app = new Hono()
   .route("/api/auth", authRoute)
   .route("/api/trucks", trucksRoute)
   .route("/api/me", meRoute)
-  .route("/api/admin", adminRoute);
+  .route("/api/admin", adminRoute)
+  .route("/api/claim", claimRoute);
 
 export type AppType = typeof app;
 
@@ -103,6 +105,7 @@ if (isProduction) {
 // (see lib/uploads.ts) — this makes sure the bucket exists before the first
 // upload request, without needing a separate manual setup step.
 await ensureUploadsBucket();
+await ensureClaimDocumentsBucket();
 
 const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
   console.log(`little-food-truck api listening on http://localhost:${info.port}`);

@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { randomBytes } from "node:crypto";
 import { db } from "./client.js";
 import {
   customerProfiles,
@@ -11,17 +12,26 @@ import {
   watchLocations,
 } from "./schema.js";
 import { newId } from "../lib/id.js";
+import { env } from "../lib/env.js";
 import { supabaseAdmin } from "../lib/supabase.js";
 
 const DEMO_PASSWORD = "password123";
 
 // Creates the Supabase Auth user first (owns credentials + role in
 // app_metadata — see routes/auth.ts) and returns its id, which our own
-// `users` row below is keyed to.
-async function createAuthUser(email: string, role: "truck" | "customer", displayName: string) {
+// `users` row below is keyed to. `password` defaults to the shared demo
+// password for regular seed accounts; the unclaimed-truck block below
+// passes a random one instead, since nobody should be able to sign into a
+// placeholder account before it's claimed.
+async function createAuthUser(
+  email: string,
+  role: "truck" | "customer",
+  displayName: string,
+  password: string = DEMO_PASSWORD,
+) {
   const { data, error } = await supabaseAdmin.auth.admin.createUser({
     email,
-    password: DEMO_PASSWORD,
+    password,
     email_confirm: true,
     app_metadata: { role },
     user_metadata: { displayName },
@@ -143,6 +153,10 @@ for (const truck of trucks) {
     locationUpdatedAt: new Date(),
     website: truck.website,
     phone: truck.phone,
+    // These are full, ready-to-use demo accounts, not admin-added
+    // placeholders — see the claimedAt comment above the unclaimed-trucks
+    // block below.
+    claimedAt: new Date(),
   });
   console.log(`seeded truck ${truck.name} (${userId})`);
 }
@@ -276,6 +290,53 @@ await db.insert(customerProfiles).values({ userId: adminId });
 console.log(`seeded admin ${adminEmail} (${adminId})`);
 
 console.log(`all seed accounts use password: ${DEMO_PASSWORD}`);
+
+// A couple of admin-added, not-yet-claimed listings — same shape POST
+// /api/admin/trucks produces (see routes/admin.ts): a full truck account
+// exists already, just with a placeholder email and a password nobody
+// knows, so /claim?token=... (routes/claim.ts) is the only way in. Useful
+// for exercising that flow locally without going through the admin UI
+// first.
+const CLAIM_TOKEN_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+const unclaimedTrucks = [
+  {
+    name: "Peach State Eats",
+    cuisine: "american" as const,
+    description: "Usually found around Atlanta, GA.",
+    lat: 33.749,
+    lng: -84.388,
+  },
+  {
+    name: "Lowcountry Boil Co.",
+    cuisine: "seafood" as const,
+    description: "Usually found around Charleston, SC.",
+    lat: 32.7765,
+    lng: -79.9311,
+  },
+];
+
+for (const truck of unclaimedTrucks) {
+  const slug = truck.name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const email = `unclaimed-${slug}@trucks.invalid`;
+  const placeholderPassword = randomBytes(24).toString("hex");
+  const userId = await createAuthUser(email, "truck", truck.name, placeholderPassword);
+
+  await db.insert(users).values({ id: userId, email, role: "truck", displayName: truck.name });
+
+  const claimToken = randomBytes(32).toString("hex");
+  await db.insert(truckProfiles).values({
+    userId,
+    name: truck.name,
+    description: truck.description,
+    cuisine: truck.cuisine,
+    lat: truck.lat,
+    lng: truck.lng,
+    claimToken,
+    claimTokenExpiresAt: new Date(Date.now() + CLAIM_TOKEN_TTL_MS),
+  });
+
+  console.log(`seeded unclaimed truck ${truck.name}: ${env.WEB_ORIGIN}/claim?token=${claimToken}`);
+}
 
 // postgres-js keeps the connection pool alive for reuse; explicitly exit so
 // this one-off script doesn't hang after seeding.
