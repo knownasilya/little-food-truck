@@ -395,8 +395,16 @@ misconfigured one.
 1. **Create a real Supabase project** at [supabase.com](https://supabase.com)
    (Database + Auth + Storage) — Cloud Run has no database of its own, and
    this app is built directly on Supabase Auth/Storage, not just Postgres.
-   Run `pnpm db:push` against it once (point `DATABASE_URL` in a local
-   `.env` at the cloud project temporarily to do this), then check Auth's
+   Copy `apps/api/.env.production.example` to `apps/api/.env.production`
+   (gitignored, like `.env`) and fill in that project's real
+   `DATABASE_URL`/`SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`/
+   `SUPABASE_JWT_SECRET` from its dashboard (Settings → Database / API).
+   Then run `pnpm db:push:prod` (from the repo root, or
+   `apps/api`) — a `:prod` counterpart to every `db:*` script
+   (`db:push`/`db:seed`/`db:studio`) that loads `.env.production` instead of
+   `.env` via `dotenv-cli`, so production credentials never need to go into
+   your shell history or a shell-specific `VAR=value command` prefix (which
+   plain/fish shells don't even support the same way). Then check Auth's
    Site URL / redirect allow-list and JWT expiry in that project's dashboard
    — the values in `supabase/config.toml` are local-dev-only fakes.
 2. **Deploy the service**, with `WEB_ORIGIN` set to a placeholder (you don't

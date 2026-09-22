@@ -10,6 +10,8 @@
     "dev:mail": "pnpm --filter @little-food-truck/api maildev",
     "db:push": "pnpm --filter @little-food-truck/api db:push",
     "db:seed": "pnpm --filter @little-food-truck/api db:seed",
+    "db:push:prod": "pnpm --filter @little-food-truck/api db:push:prod",
+    "db:seed:prod": "pnpm --filter @little-food-truck/api db:seed:prod",
     "build": "pnpm -r build",
     "check": "pnpm -r check",
     "lint": "pnpm -r lint",

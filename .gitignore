@@ -8,6 +8,7 @@ build/
 .env
 .env.*
 !.env.example
+!.env.production.example
 apps/api/data/*.sqlite
 apps/api/data/*.sqlite-journal
 apps/api/data/*.sqlite-shm
