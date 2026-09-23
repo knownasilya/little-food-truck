@@ -161,29 +161,45 @@ for (const truck of trucks) {
   const email = `unclaimed-${slug}@trucks.invalid`;
 
   try {
-    const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
-    if (existing) {
-      console.log(`${truck.name} (${truck.city}): already seeded, skipping`);
-      skipped++;
-      continue;
+    const [existingUser] = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
+
+    let userId: string;
+    if (existingUser) {
+      const [existingProfile] = await db
+        .select({ userId: truckProfiles.userId })
+        .from(truckProfiles)
+        .where(eq(truckProfiles.userId, existingUser.id));
+      if (existingProfile) {
+        console.log(`${truck.name} (${truck.city}): already seeded, skipping`);
+        skipped++;
+        continue;
+      }
+      // The account exists (from a prior run) but its truck_profiles row
+      // doesn't — e.g. that run failed partway through, after the auth
+      // user + users row were created but before the profile insert (which
+      // is exactly what happens if this runs before `db:push:prod` has
+      // added truck_profiles' claim columns). Finish it rather than
+      // re-creating the auth user, which would just fail on the
+      // email-uniqueness constraint.
+      console.log(`${truck.name} (${truck.city}): account exists but profile is missing, completing it`);
+      userId = existingUser.id;
+    } else {
+      const placeholderPassword = randomBytes(24).toString("hex");
+      const { data, error } = await supabaseAdmin.auth.admin.createUser({
+        email,
+        password: placeholderPassword,
+        email_confirm: true,
+        app_metadata: { role: "truck" },
+        user_metadata: { displayName: truck.name },
+      });
+      if (error || !data.user) {
+        throw new Error(`Could not create auth user: ${error?.message}`);
+      }
+      userId = data.user.id;
+      await db.insert(users).values({ id: userId, email, role: "truck", displayName: truck.name });
     }
 
-    const placeholderPassword = randomBytes(24).toString("hex");
-    const { data, error } = await supabaseAdmin.auth.admin.createUser({
-      email,
-      password: placeholderPassword,
-      email_confirm: true,
-      app_metadata: { role: "truck" },
-      user_metadata: { displayName: truck.name },
-    });
-    if (error || !data.user) {
-      throw new Error(`Could not create auth user: ${error?.message}`);
-    }
-    const userId = data.user.id;
     const { lat, lng } = cities[truck.city as keyof typeof cities];
-
-    await db.insert(users).values({ id: userId, email, role: "truck", displayName: truck.name });
-
     const claimToken = randomBytes(32).toString("hex");
     await db.insert(truckProfiles).values({
       userId,
