@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { randomBytes } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { db, closeDb } from "./client.js";
 import { truckProfiles, users } from "./schema.js";
 import { env } from "../lib/env.js";
@@ -13,9 +14,12 @@ import { supabaseAdmin } from "../lib/supabase.js";
 // directories, local news coverage, each truck's own site/social) — see
 // the source notes inline. Deliberately no `claimEmail`/personal contact
 // info: nothing here claims to have verified who the real owner is, that's
-// exactly what the claim-request review step is for. Run once — re-running
-// after a successful run fails loudly on the email-uniqueness constraint
-// rather than silently duplicating rows.
+// exactly what the claim-request review step is for. Idempotent by design
+// (each truck's placeholder email is deterministic from its name — see the
+// `email` line below) — safely re-runnable after a partial failure (a
+// dropped connection, a rate limit, ...): already-seeded trucks are
+// skipped, not duplicated, and one truck's own failure doesn't stop the
+// rest from being attempted.
 const CLAIM_TOKEN_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
 // Well-known city-center coordinates, not a specific truck's real
@@ -148,43 +152,60 @@ const trucks = [
   },
 ];
 
+let created = 0;
+let skipped = 0;
+let failed = 0;
+
 for (const truck of trucks) {
   const slug = truck.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
   const email = `unclaimed-${slug}@trucks.invalid`;
-  const placeholderPassword = randomBytes(24).toString("hex");
 
-  const { data, error } = await supabaseAdmin.auth.admin.createUser({
-    email,
-    password: placeholderPassword,
-    email_confirm: true,
-    app_metadata: { role: "truck" },
-    user_metadata: { displayName: truck.name },
-  });
-  if (error || !data.user) {
-    throw new Error(`Could not create auth user for ${truck.name}: ${error?.message}`);
+  try {
+    const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
+    if (existing) {
+      console.log(`${truck.name} (${truck.city}): already seeded, skipping`);
+      skipped++;
+      continue;
+    }
+
+    const placeholderPassword = randomBytes(24).toString("hex");
+    const { data, error } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      password: placeholderPassword,
+      email_confirm: true,
+      app_metadata: { role: "truck" },
+      user_metadata: { displayName: truck.name },
+    });
+    if (error || !data.user) {
+      throw new Error(`Could not create auth user: ${error?.message}`);
+    }
+    const userId = data.user.id;
+    const { lat, lng } = cities[truck.city as keyof typeof cities];
+
+    await db.insert(users).values({ id: userId, email, role: "truck", displayName: truck.name });
+
+    const claimToken = randomBytes(32).toString("hex");
+    await db.insert(truckProfiles).values({
+      userId,
+      name: truck.name,
+      description: `${truck.description} Usually found around ${truck.city}.`,
+      cuisine: truck.cuisine,
+      lat,
+      lng,
+      website: truck.website ?? null,
+      phone: truck.phone ?? null,
+      claimToken,
+      claimTokenExpiresAt: new Date(Date.now() + CLAIM_TOKEN_TTL_MS),
+    });
+
+    console.log(`${truck.name} (${truck.city}): ${env.WEB_ORIGIN}/claim?token=${claimToken}`);
+    created++;
+  } catch (err) {
+    console.error(`${truck.name} (${truck.city}): FAILED — ${err instanceof Error ? err.message : err}`);
+    failed++;
   }
-  const userId = data.user.id;
-  const { lat, lng } = cities[truck.city as keyof typeof cities];
-
-  await db.insert(users).values({ id: userId, email, role: "truck", displayName: truck.name });
-
-  const claimToken = randomBytes(32).toString("hex");
-  await db.insert(truckProfiles).values({
-    userId,
-    name: truck.name,
-    description: `${truck.description} Usually found around ${truck.city}.`,
-    cuisine: truck.cuisine,
-    lat,
-    lng,
-    website: truck.website ?? null,
-    phone: truck.phone ?? null,
-    claimToken,
-    claimTokenExpiresAt: new Date(Date.now() + CLAIM_TOKEN_TTL_MS),
-  });
-
-  console.log(`${truck.name} (${truck.city}): ${env.WEB_ORIGIN}/claim?token=${claimToken}`);
 }
 
-console.log(`\nSeeded ${trucks.length} unclaimed trucks.`);
+console.log(`\n${created} created, ${skipped} already existed, ${failed} failed (of ${trucks.length}).`);
 await closeDb();
-process.exit(0);
+process.exit(failed > 0 ? 1 : 0);
