@@ -22,6 +22,15 @@ import { supabaseAdmin } from "../lib/supabase.js";
 // rest from being attempted.
 const CLAIM_TOKEN_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
+// Printed unconditionally, before anything else runs — dotenv (and
+// dotenv-cli, for the :prod variant of this script) never overrides a
+// variable that's already set in the environment, so if DATABASE_URL
+// leaked into this shell session from something earlier, `.env.production`
+// silently wouldn't take effect and this would quietly run against the
+// wrong database. Check this line matches where you expect before trusting
+// the "already seeded" skips below.
+console.log(`Connecting to: ${new URL(env.DATABASE_URL).host}\n`);
+
 // Well-known city-center coordinates, not a specific truck's real
 // location — same "usually found around <city>" approximation already
 // used for demo trucks in this file and the unclaimed-trucks block above.
