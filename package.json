@@ -16,6 +16,8 @@
     "db:seed:sc-ga-trucks:prod": "pnpm --filter @little-food-truck/api db:seed:sc-ga-trucks:prod",
     "db:seed:fl-nc-trucks": "pnpm --filter @little-food-truck/api db:seed:fl-nc-trucks",
     "db:seed:fl-nc-trucks:prod": "pnpm --filter @little-food-truck/api db:seed:fl-nc-trucks:prod",
+    "db:seed:al-tn-trucks": "pnpm --filter @little-food-truck/api db:seed:al-tn-trucks",
+    "db:seed:al-tn-trucks:prod": "pnpm --filter @little-food-truck/api db:seed:al-tn-trucks:prod",
     "build": "pnpm -r build",
     "check": "pnpm -r check",
     "lint": "pnpm -r lint",
