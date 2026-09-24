@@ -20,6 +20,7 @@
     "db:seed:al-tn-trucks": "tsx src/db/seed-al-tn-trucks.ts",
     "db:seed:ak-az-trucks": "tsx src/db/seed-ak-az-trucks.ts",
     "db:seed:region": "tsx src/db/seed-region-trucks.ts",
+    "db:seed:all-trucks": "tsx src/db/seed-all-trucks.ts",
     "db:push:prod": "dotenv -e .env.production -- drizzle-kit push",
     "db:studio:prod": "dotenv -e .env.production -- drizzle-kit studio",
     "db:seed:prod": "dotenv -e .env.production -- tsx src/db/seed.ts",
@@ -27,7 +28,8 @@
     "db:seed:fl-nc-trucks:prod": "dotenv -e .env.production -- tsx src/db/seed-fl-nc-trucks.ts",
     "db:seed:al-tn-trucks:prod": "dotenv -e .env.production -- tsx src/db/seed-al-tn-trucks.ts",
     "db:seed:ak-az-trucks:prod": "dotenv -e .env.production -- tsx src/db/seed-ak-az-trucks.ts",
-    "db:seed:region:prod": "dotenv -e .env.production -- tsx src/db/seed-region-trucks.ts"
+    "db:seed:region:prod": "dotenv -e .env.production -- tsx src/db/seed-region-trucks.ts",
+    "db:seed:all-trucks:prod": "dotenv -e .env.production -- tsx src/db/seed-all-trucks.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
