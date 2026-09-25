@@ -80,6 +80,13 @@
 	let activeTab = $state<Tab>('browse');
 
 	let trucks = $state<Truck[]>([]);
+	// All trucks matching the current filters, unpaginated — the map shows
+	// every matching pin at once (that's the point of clustering), while
+	// `trucks` above stays paginated for the card list below it. Without
+	// this split, "All states" would only ever plot whichever 24 trucks
+	// happen to be on the current list page, silently hiding every other
+	// state's trucks from the map until you paged far enough to reach them.
+	let mapTrucks = $state<Truck[]>([]);
 	let favoriteIds = $state<Set<string>>(new Set());
 	let search = $state('');
 	let cuisine = $state<CuisineType | ''>('');
@@ -137,7 +144,7 @@
 		loading = true;
 		error = null;
 		try {
-			const query: Record<string, string> = { page: String(page), pageSize: String(PAGE_SIZE) };
+			const query: Record<string, string> = {};
 			if (search) query.q = search;
 			if (cuisine) query.cuisine = cuisine;
 			if (stateFilter) query.state = stateFilter;
@@ -158,13 +165,23 @@
 				}
 			}
 
-			const res = await client.api.trucks.$get({ query });
-			if (res.ok) {
-				const body = await res.json();
+			// Same filters for both — page/pageSize (list) vs. no page at all
+			// (map: every matching truck, unpaginated) are the only difference.
+			const [listRes, mapRes] = await Promise.all([
+				client.api.trucks.$get({
+					query: { ...query, page: String(page), pageSize: String(PAGE_SIZE) },
+				}),
+				client.api.trucks.$get({ query }),
+			]);
+			if (listRes.ok) {
+				const body = await listRes.json();
 				trucks = body.trucks;
 				total = body.total;
 			} else {
 				error = 'Could not load trucks. Is the API running and reachable?';
+			}
+			if (mapRes.ok) {
+				mapTrucks = (await mapRes.json()).trucks;
 			}
 		} catch {
 			error = 'Could not load trucks. Is the API running and reachable?';
@@ -272,7 +289,7 @@
 			{#if mapLocationError}
 				<p class="mb-2 rounded bg-orange-50 p-2 text-sm text-orange-700">{mapLocationError}</p>
 			{/if}
-			<TruckMap {trucks} {userLocation} height="35vh" />
+			<TruckMap trucks={mapTrucks} {userLocation} height="35vh" />
 		{/if}
 	</div>
 
