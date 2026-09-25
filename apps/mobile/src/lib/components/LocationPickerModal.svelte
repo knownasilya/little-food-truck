@@ -33,6 +33,13 @@
 		});
 		map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
 		map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+		map.on('load', () => {
+			// The compact attribution control re-expands itself once the
+			// basemap tile source's attribution text becomes known (which
+			// happens asynchronously as the style loads) — collapse it back
+			// down to just the "i" icon only after that settles.
+			container.querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show');
+		});
 	});
 
 	onDestroy(() => {

@@ -39,7 +39,7 @@ test.describe("Truck claim flow: admin adds a listing, an owner claims it", () =
     await adminPage.goto("/admin");
     await adminPage.getByRole("button", { name: "Add truck" }).click();
     await adminPage.getByPlaceholder("Truck name").fill(truckName);
-    await adminPage.getByRole("combobox").selectOption("seafood");
+    await adminPage.getByRole("combobox", { name: "Cuisine" }).selectOption("seafood");
     await adminPage.getByPlaceholder("City / area (optional)").fill("Charleston, SC");
     // Owner email left blank on purpose — leaving it set means the app
     // tries to actually send mail, and MailDev isn't part of this test

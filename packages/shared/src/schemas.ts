@@ -30,6 +30,52 @@ export const cuisineType = z.enum([
 ]);
 export type CuisineType = z.infer<typeof cuisineType>;
 
+// Two-letter USPS codes for the 50 states — used for the truck_profiles.state
+// column (see db/schema.ts), the /browse state filter, and the admin/
+// dashboard "state" dropdowns. Deliberately just the 50 states (no DC/
+// territories) to match what the seed data actually covers.
+export const usStateCode = z.enum([
+  "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
+  "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
+  "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+  "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
+  "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
+]);
+export type UsStateCode = z.infer<typeof usStateCode>;
+
+export const US_STATES: { code: UsStateCode; name: string }[] = [
+  { code: "AL", name: "Alabama" }, { code: "AK", name: "Alaska" },
+  { code: "AZ", name: "Arizona" }, { code: "AR", name: "Arkansas" },
+  { code: "CA", name: "California" }, { code: "CO", name: "Colorado" },
+  { code: "CT", name: "Connecticut" }, { code: "DE", name: "Delaware" },
+  { code: "FL", name: "Florida" }, { code: "GA", name: "Georgia" },
+  { code: "HI", name: "Hawaii" }, { code: "ID", name: "Idaho" },
+  { code: "IL", name: "Illinois" }, { code: "IN", name: "Indiana" },
+  { code: "IA", name: "Iowa" }, { code: "KS", name: "Kansas" },
+  { code: "KY", name: "Kentucky" }, { code: "LA", name: "Louisiana" },
+  { code: "ME", name: "Maine" }, { code: "MD", name: "Maryland" },
+  { code: "MA", name: "Massachusetts" }, { code: "MI", name: "Michigan" },
+  { code: "MN", name: "Minnesota" }, { code: "MS", name: "Mississippi" },
+  { code: "MO", name: "Missouri" }, { code: "MT", name: "Montana" },
+  { code: "NE", name: "Nebraska" }, { code: "NV", name: "Nevada" },
+  { code: "NH", name: "New Hampshire" }, { code: "NJ", name: "New Jersey" },
+  { code: "NM", name: "New Mexico" }, { code: "NY", name: "New York" },
+  { code: "NC", name: "North Carolina" }, { code: "ND", name: "North Dakota" },
+  { code: "OH", name: "Ohio" }, { code: "OK", name: "Oklahoma" },
+  { code: "OR", name: "Oregon" }, { code: "PA", name: "Pennsylvania" },
+  { code: "RI", name: "Rhode Island" }, { code: "SC", name: "South Carolina" },
+  { code: "SD", name: "South Dakota" }, { code: "TN", name: "Tennessee" },
+  { code: "TX", name: "Texas" }, { code: "UT", name: "Utah" },
+  { code: "VT", name: "Vermont" }, { code: "VA", name: "Virginia" },
+  { code: "WA", name: "Washington" }, { code: "WV", name: "West Virginia" },
+  { code: "WI", name: "Wisconsin" }, { code: "WY", name: "Wyoming" },
+];
+
+// Accepts a real state code or "" (meaning "clear the field" on a PATCH, or
+// "no filter" on a query param) — used wherever state is optional/clearable
+// rather than required, e.g. a <select> with a blank first option.
+const optionalStateField = z.union([usStateCode, z.literal("")]).optional();
+
 export const truckProfileSchema = z.object({
   name: z.string().min(1).max(120),
   description: z.string().max(2000).optional().default(""),
@@ -43,6 +89,7 @@ export const truckProfileSchema = z.object({
   // vary too much to validate usefully).
   website: z.string().max(300).optional(),
   phone: z.string().max(30).optional(),
+  state: optionalStateField,
 });
 export type TruckProfileInput = z.infer<typeof truckProfileSchema>;
 
@@ -135,8 +182,25 @@ export const truckSchema = z.object({
   verified: z.boolean(),
   website: z.string().nullable(),
   phone: z.string().nullable(),
+  state: usStateCode.nullable(),
 });
 export type Truck = z.infer<typeof truckSchema>;
+
+// GET /api/trucks — always this envelope shape (never a bare array), so the
+// Hono RPC client has one static response type regardless of whether the
+// caller is paginating (browse's main list, via `page`) or just capping a
+// result (the trending/newest highlight strips, via `limit` — see
+// routes/trucks.ts). `hasMore` only reflects real pagination; it's always
+// `false` for a `limit`-only request since there's no "next page" concept
+// there.
+export const truckListResponseSchema = z.object({
+  trucks: z.array(truckSchema),
+  total: z.number(),
+  page: z.number(),
+  pageSize: z.number(),
+  hasMore: z.boolean(),
+});
+export type TruckListResponse = z.infer<typeof truckListResponseSchema>;
 
 export const reviewRecordSchema = z.object({
   id: z.string(),
@@ -393,6 +457,7 @@ export const adminCreateTruckSchema = z.object({
   website: z.string().max(300).optional(),
   phone: z.string().max(30).optional(),
   ownerEmail: z.string().email().optional(),
+  state: optionalStateField,
 });
 export type AdminCreateTruckInput = z.infer<typeof adminCreateTruckSchema>;
 

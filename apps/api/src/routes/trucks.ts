@@ -5,6 +5,7 @@ import {
   dietaryTag,
   reviewSchema,
   truckSortType,
+  usStateCode,
 } from "@little-food-truck/shared";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
@@ -14,17 +15,31 @@ import { cateringRequests, favorites, reviews, users } from "../db/schema.js";
 import { requireRole, withAuth } from "../lib/auth.js";
 import { createApp } from "../lib/context.js";
 import { newId } from "../lib/id.js";
-import { getTruck, getTruckDetail, incrementTruckView, listTrucks } from "../lib/trucks.js";
+import {
+  DEFAULT_PAGE_SIZE,
+  getTruck,
+  getTruckDetail,
+  incrementTruckView,
+  listTrucks,
+} from "../lib/trucks.js";
 
 const listQuerySchema = z.object({
   cuisine: cuisineType.optional(),
+  state: usStateCode.optional(),
   q: z.string().optional(),
   openOnly: z.coerce.boolean().optional(),
   lat: z.coerce.number().optional(),
   lng: z.coerce.number().optional(),
   radiusMiles: z.coerce.number().optional(),
   sort: truckSortType.optional(),
+  // Caps the result with no pagination metadata — for the trending/newest
+  // highlight strips (see browse's loadHighlights()). Omit `page` when
+  // using this.
   limit: z.coerce.number().int().min(1).max(50).optional(),
+  // 1-based — set by the browse page's main list for real pagination.
+  // Mutually exclusive with `limit` in practice (never sent together).
+  page: z.coerce.number().int().min(1).optional(),
+  pageSize: z.coerce.number().int().min(1).max(100).optional(),
   // Comma-separated dietary tags, e.g. "vegan,gluten-free" — matches trucks
   // with at least one menu item carrying any of the given tags.
   dietary: z
@@ -48,16 +63,28 @@ export const trucksRoute = createApp()
         ? { lat: q.lat, lng: q.lng, radiusMiles: q.radiusMiles ?? 10 }
         : undefined;
 
-    const trucks = await listTrucks({
+    const { trucks, total } = await listTrucks({
       cuisine: q.cuisine,
+      state: q.state,
       search: q.q,
       openOnly: q.openOnly,
       dietaryTags: q.dietary,
       near,
       sort: q.sort,
       limit: q.limit,
+      page: q.page,
+      pageSize: q.pageSize,
     });
-    return c.json(trucks);
+
+    const page = q.page ?? 1;
+    const pageSize = q.pageSize ?? DEFAULT_PAGE_SIZE;
+    return c.json({
+      trucks,
+      total,
+      page,
+      pageSize,
+      hasMore: q.page != null ? page * pageSize < total : false,
+    });
   })
   .get("/:id", async (c) => {
     const truck = await getTruckDetail(c.req.param("id"));

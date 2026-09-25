@@ -75,6 +75,12 @@ export const truckProfiles = pgTable("truck_profiles", {
   // see the PATCH /me/truck-profile handler in routes/me.ts.
   website: text("website"),
   phone: text("phone"),
+  // Two-letter USPS state code (e.g. "TX") — the /browse state filter and
+  // the admin-added-truck seed pipeline are the two real sources of this;
+  // a self-signed-up truck only has it once the owner sets it from the
+  // dashboard. Nullable: "no state on file" is a normal, common state, not
+  // an error.
+  state: text("state"),
   // Claim flow (routes/admin.ts + routes/claim.ts + truckClaimRequests
   // below) — lets an admin create a truck listing before its real owner has
   // an account. An admin-created truck still gets a full auth user + users

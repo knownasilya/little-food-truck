@@ -1,5 +1,6 @@
 <script lang="ts">
-	import type { AdminClaimRequest, AdminReview, AdminTruck, CuisineType } from '@little-food-truck/shared';
+	import type { AdminClaimRequest, AdminReview, AdminTruck, CuisineType, UsStateCode } from '@little-food-truck/shared';
+	import { US_STATES } from '@little-food-truck/shared';
 	import { goto } from '$app/navigation';
 	import { client, resolveUploadUrl } from '$lib/api';
 	import { ensureSessionLoaded, getAuth } from '$lib/auth.svelte';
@@ -72,6 +73,7 @@
 	let newTruckName = $state('');
 	let newTruckCuisine = $state<CuisineType>('other');
 	let newTruckCity = $state('');
+	let newTruckState = $state<UsStateCode | ''>('');
 	let newTruckOwnerEmail = $state('');
 	let addingTruck = $state(false);
 	let addTruckError = $state<string | null>(null);
@@ -88,7 +90,8 @@
 					name: newTruckName,
 					cuisine: newTruckCuisine,
 					description: newTruckCity ? `Usually found around ${newTruckCity}.` : undefined,
-					ownerEmail: newTruckOwnerEmail || undefined
+					ownerEmail: newTruckOwnerEmail || undefined,
+					state: newTruckState || undefined
 				}
 			});
 			if (!res.ok) {
@@ -100,6 +103,7 @@
 			lastClaimEmailed = body.emailed;
 			newTruckName = '';
 			newTruckCity = '';
+			newTruckState = '';
 			newTruckOwnerEmail = '';
 			newTruckCuisine = 'other';
 			trucksLoaded = false;
@@ -324,7 +328,11 @@
 					required
 					class="rounded border border-stone-300 px-3 py-2"
 				/>
-				<select bind:value={newTruckCuisine} class="rounded border border-stone-300 px-3 py-2">
+				<select
+					bind:value={newTruckCuisine}
+					aria-label="Cuisine"
+					class="rounded border border-stone-300 px-3 py-2"
+				>
 					{#each cuisines as c (c)}
 						<option value={c}>{c}</option>
 					{/each}
@@ -335,6 +343,16 @@
 					bind:value={newTruckCity}
 					class="rounded border border-stone-300 px-3 py-2"
 				/>
+				<select
+					bind:value={newTruckState}
+					aria-label="State"
+					class="rounded border border-stone-300 px-3 py-2"
+				>
+					<option value="">State (optional)</option>
+					{#each US_STATES as s (s.code)}
+						<option value={s.code}>{s.name}</option>
+					{/each}
+				</select>
 				<input
 					type="email"
 					placeholder="Owner email (optional — emails them the claim link)"

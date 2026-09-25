@@ -28,6 +28,7 @@ type TruckProfile = {
 	timezone: string;
 	website: string | null;
 	phone: string | null;
+	state: string | null;
 };
 
 type CustomerProfile = {

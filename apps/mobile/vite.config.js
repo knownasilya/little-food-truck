@@ -8,6 +8,15 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(() => ({
   plugins: [tailwindcss(), sveltekit()],
 
+  // Vite's dep optimizer pre-bundles maplibre-gl's main thread code but
+  // misses its worker chunk (maplibre-gl-worker.mjs), which 404s at
+  // runtime — breaking anything that needs the worker (e.g. clustering on
+  // a GeoJSON source, which never finishes loading without it). Excluding
+  // the package from pre-bundling avoids the broken split.
+  optimizeDeps: {
+    exclude: ["maplibre-gl"],
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors

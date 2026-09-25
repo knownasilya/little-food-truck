@@ -1,10 +1,22 @@
 import { randomBytes } from "node:crypto";
-import type { CuisineType } from "@little-food-truck/shared";
+import { type CuisineType, usStateCode } from "@little-food-truck/shared";
 import { eq } from "drizzle-orm";
 import { db } from "./client.js";
 import { truckProfiles, users } from "./schema.js";
 import { env } from "../lib/env.js";
 import { supabaseAdmin } from "../lib/supabase.js";
+
+// Every region seed script already formats `city` as "City, ST" (that's
+// what ends up in the description's "Usually found around ..." sentence
+// too) — parsed here instead of asking each of the 25 region files to also
+// pass a redundant explicit `state` field. Falls back to null rather than
+// throwing on an unexpected format, since a missing state filter option is
+// much cheaper to notice/fix than a seed run aborting partway through.
+function parseStateFromCity(city: string): string | null {
+  const match = /,\s*([A-Za-z]{2})$/.exec(city);
+  const code = match?.[1]?.toUpperCase();
+  return code && usStateCode.safeParse(code).success ? code : null;
+}
 
 // Shared by every region's real-truck seed script (seed-sc-ga-trucks.ts,
 // seed-fl-nc-trucks.ts, ...) — adds each truck as an unclaimed listing,
@@ -99,6 +111,7 @@ export async function seedUnclaimedTrucks(
         lng: truck.lng,
         website: truck.website ?? null,
         phone: truck.phone ?? null,
+        state: parseStateFromCity(truck.city),
         claimToken,
         claimTokenExpiresAt: new Date(Date.now() + CLAIM_TOKEN_TTL_MS),
       });

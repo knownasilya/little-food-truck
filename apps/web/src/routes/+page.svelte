@@ -40,7 +40,8 @@
 			createdAt: '',
 			verified: true,
 			website: null,
-			phone: null
+			phone: null,
+			state: 'TX'
 		},
 		{
 			id: 'preview-2',
@@ -61,7 +62,8 @@
 			createdAt: '',
 			verified: false,
 			website: null,
-			phone: null
+			phone: null,
+			state: 'TX'
 		},
 		{
 			id: 'preview-3',
@@ -82,7 +84,8 @@
 			createdAt: '',
 			verified: false,
 			website: null,
-			phone: null
+			phone: null,
+			state: 'TX'
 		}
 	];
 </script>

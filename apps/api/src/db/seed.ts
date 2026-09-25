@@ -153,6 +153,7 @@ for (const truck of trucks) {
     locationUpdatedAt: new Date(),
     website: truck.website,
     phone: truck.phone,
+    state: "TX",
     // These are full, ready-to-use demo accounts, not admin-added
     // placeholders — see the claimedAt comment above the unclaimed-trucks
     // block below.

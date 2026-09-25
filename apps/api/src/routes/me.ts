@@ -110,7 +110,7 @@ export const meRoute = createApp()
     zValidator("json", truckProfileSchema.partial()),
     async (c) => {
       const userId = c.var.userId!;
-      const { website, phone, ...rest } = c.req.valid("json");
+      const { website, phone, state, ...rest } = c.req.valid("json");
       const updates: Partial<typeof truckProfiles.$inferInsert> = { ...rest };
 
       // Normalize here rather than in the schema: empty string clears the
@@ -123,6 +123,9 @@ export const meRoute = createApp()
       if (phone !== undefined) {
         const trimmed = phone.trim();
         updates.phone = trimmed || null;
+      }
+      if (state !== undefined) {
+        updates.state = state || null;
       }
 
       await db.update(truckProfiles).set(updates).where(eq(truckProfiles.userId, userId));

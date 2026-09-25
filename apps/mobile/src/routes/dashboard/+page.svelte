@@ -3,8 +3,10 @@
 		CateringRequestRecord,
 		CuisineType,
 		ReviewRecord,
-		TruckDetail
+		TruckDetail,
+		UsStateCode
 	} from '@little-food-truck/shared';
+	import { US_STATES } from '@little-food-truck/shared';
 	import { onMount } from 'svelte';
 	import { client, resolveUploadUrl } from '$lib/api';
 	import { getAuth, loadSession, uploadTruckCoverPhoto } from '$lib/auth.svelte';
@@ -60,6 +62,9 @@
 	let timezone = $state('America/Chicago');
 	let website = $state('');
 	let phone = $state('');
+	// Named stateCode, not state — "state" as a variable name collides with
+	// Svelte's own $state rune in its compiler's scope analysis.
+	let stateCode = $state<UsStateCode | ''>('');
 	let savingProfile = $state(false);
 	let updatingLocation = $state(false);
 	let locationError = $state<string | null>(null);
@@ -118,6 +123,7 @@
 			timezone = profile.timezone;
 			website = profile.website ?? '';
 			phone = profile.phone ?? '';
+			stateCode = (profile.state as UsStateCode | null) ?? '';
 			waitMinutes = profile.waitMinutes != null ? String(profile.waitMinutes) : '';
 			initialized = true;
 		}
@@ -128,7 +134,7 @@
 		savingProfile = true;
 		try {
 			await client.api.me['truck-profile'].$patch({
-				json: { name, description, cuisine, timezone, website, phone }
+				json: { name, description, cuisine, timezone, website, phone, state: stateCode }
 			});
 			await loadSession();
 		} finally {
@@ -361,6 +367,16 @@
 					class="rounded border border-stone-300 px-3 py-2"
 				/>
 			</label>
+			<label class="flex flex-col gap-1 text-sm">
+				State
+				<select bind:value={stateCode} class="rounded border border-stone-300 px-3 py-2">
+					<option value="">Not set</option>
+					{#each US_STATES as s (s.code)}
+						<option value={s.code}>{s.name}</option>
+					{/each}
+				</select>
+			</label>
+			<p class="-mt-1 text-xs text-stone-400">Lets customers find you with Browse's state filter.</p>
 			<button
 				type="submit"
 				disabled={savingProfile}

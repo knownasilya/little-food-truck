@@ -1,5 +1,12 @@
 <script lang="ts">
-	import { DIETARY_TAGS, type CuisineType, type DietaryTag, type Truck } from '@little-food-truck/shared';
+	import {
+		DIETARY_TAGS,
+		US_STATES,
+		type CuisineType,
+		type DietaryTag,
+		type Truck,
+		type UsStateCode,
+	} from '@little-food-truck/shared';
 	import { client } from '$lib/api';
 	import { getAuth } from '$lib/auth.svelte';
 	import { getCurrentCoords } from '$lib/geo';
@@ -56,6 +63,7 @@
 
 	const NEW_WITHIN_DAYS = 7;
 	const HIGHLIGHT_LIMIT = '20';
+	const PAGE_SIZE = 24;
 
 	const cuisines: CuisineType[] = [
 		'american',
@@ -75,16 +83,24 @@
 	let favoriteIds = $state<Set<string>>(new Set());
 	let search = $state('');
 	let cuisine = $state<CuisineType | ''>('');
+	let stateFilter = $state<UsStateCode | ''>('');
 	let nearMe = $state(false);
 	let openOnly = $state(false);
 	let dietary = $state<DietaryTag[]>([]);
 	let sort = $state<'relevant' | 'rating' | 'distance' | 'newest'>('relevant');
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+	let page = $state(1);
+	let total = $state(0);
+
+	function onFilterChange() {
+		page = 1;
+		loadTrucks();
+	}
 
 	function toggleDietary(tag: DietaryTag) {
 		dietary = dietary.includes(tag) ? dietary.filter((t) => t !== tag) : [...dietary, tag];
-		loadTrucks();
+		onFilterChange();
 	}
 
 	let trending = $state<Truck[]>([]);
@@ -97,13 +113,13 @@
 			client.api.trucks.$get({ query: { sort: 'newest', limit: HIGHLIGHT_LIMIT } }),
 		]);
 		if (trendingRes.ok) {
-			const rows = await trendingRes.json();
-			trending = rows.filter((t) => t.viewCount > 0);
+			const body = await trendingRes.json();
+			trending = body.trucks.filter((t) => t.viewCount > 0);
 		}
 		if (newestRes.ok) {
-			const rows = await newestRes.json();
+			const body = await newestRes.json();
 			const cutoff = Date.now() - NEW_WITHIN_DAYS * 24 * 60 * 60 * 1000;
-			newThisWeek = rows.filter((t) => new Date(t.createdAt).getTime() >= cutoff);
+			newThisWeek = body.trucks.filter((t) => new Date(t.createdAt).getTime() >= cutoff);
 		}
 		highlightsLoaded = true;
 	}
@@ -121,9 +137,10 @@
 		loading = true;
 		error = null;
 		try {
-			const query: Record<string, string> = {};
+			const query: Record<string, string> = { page: String(page), pageSize: String(PAGE_SIZE) };
 			if (search) query.q = search;
 			if (cuisine) query.cuisine = cuisine;
+			if (stateFilter) query.state = stateFilter;
 			if (openOnly) query.openOnly = 'true';
 			if (dietary.length > 0) query.dietary = dietary.join(',');
 			if (sort !== 'relevant') query.sort = sort;
@@ -142,13 +159,23 @@
 			}
 
 			const res = await client.api.trucks.$get({ query });
-			if (res.ok) trucks = await res.json();
-			else error = 'Could not load trucks. Is the API running and reachable?';
+			if (res.ok) {
+				const body = await res.json();
+				trucks = body.trucks;
+				total = body.total;
+			} else {
+				error = 'Could not load trucks. Is the API running and reachable?';
+			}
 		} catch {
 			error = 'Could not load trucks. Is the API running and reachable?';
 		} finally {
 			loading = false;
 		}
+	}
+
+	function goToPage(next: number) {
+		page = next;
+		loadTrucks();
 	}
 
 	async function toggleFavorite(truck: Truck) {
@@ -252,7 +279,7 @@
 	<div class="mb-4 flex flex-col gap-2">
 		<input
 			bind:value={search}
-			onchange={loadTrucks}
+			onchange={onFilterChange}
 			type="search"
 			placeholder="Search trucks…"
 			class="rounded border border-stone-300 px-3 py-2"
@@ -260,12 +287,22 @@
 		<div class="flex gap-2">
 			<select
 				bind:value={cuisine}
-				onchange={loadTrucks}
+				onchange={onFilterChange}
 				class="flex-1 rounded border border-stone-300 px-3 py-2"
 			>
 				<option value="">All cuisines</option>
 				{#each cuisines as c (c)}
 					<option value={c}>{c}</option>
+				{/each}
+			</select>
+			<select
+				bind:value={stateFilter}
+				onchange={onFilterChange}
+				class="flex-1 rounded border border-stone-300 px-3 py-2"
+			>
+				<option value="">All states</option>
+				{#each US_STATES as s (s.code)}
+					<option value={s.code}>{s.name}</option>
 				{/each}
 			</select>
 			<button
@@ -274,7 +311,7 @@
 					: 'border-stone-300'}"
 				onclick={() => {
 					nearMe = !nearMe;
-					loadTrucks();
+					onFilterChange();
 				}}
 			>
 				<GpsFix size={16} weight="bold" /> Near me
@@ -283,7 +320,7 @@
 		<div class="flex gap-2">
 			<select
 				bind:value={sort}
-				onchange={loadTrucks}
+				onchange={onFilterChange}
 				class="flex-1 rounded border border-stone-300 px-3 py-2 text-sm"
 			>
 				<option value="relevant">Sort: relevant</option>
@@ -292,7 +329,7 @@
 				<option value="newest">Sort: newest</option>
 			</select>
 			<label class="flex items-center gap-2 whitespace-nowrap text-sm">
-				<input type="checkbox" bind:checked={openOnly} onchange={loadTrucks} />
+				<input type="checkbox" bind:checked={openOnly} onchange={onFilterChange} />
 				Open now
 			</label>
 		</div>
@@ -328,6 +365,25 @@
 				/>
 			{/each}
 		</div>
+		{#if total > PAGE_SIZE}
+			<div class="mt-6 flex items-center justify-center gap-3 text-sm">
+				<button
+					disabled={page <= 1}
+					onclick={() => goToPage(page - 1)}
+					class="rounded border border-stone-300 px-3 py-1.5 disabled:opacity-40"
+				>
+					Previous
+				</button>
+				<span class="text-stone-500">Page {page} of {Math.max(1, Math.ceil(total / PAGE_SIZE))}</span>
+				<button
+					disabled={page * PAGE_SIZE >= total}
+					onclick={() => goToPage(page + 1)}
+					class="rounded border border-stone-300 px-3 py-1.5 disabled:opacity-40"
+				>
+					Next
+				</button>
+			</div>
+		{/if}
 	{/if}
 {:else if activeTab === 'new'}
 	{#if !highlightsLoaded}

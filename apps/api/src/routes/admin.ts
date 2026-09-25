@@ -151,6 +151,7 @@ export const adminRoute = createApp()
       lng: input.lng ?? null,
       website: input.website || null,
       phone: input.phone || null,
+      state: input.state || null,
       claimToken,
       claimTokenExpiresAt,
       claimEmail: input.ownerEmail ?? null,

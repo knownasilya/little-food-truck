@@ -4,6 +4,7 @@ import type {
   Truck,
   TruckDetail,
   TruckSortType,
+  UsStateCode,
 } from "@little-food-truck/shared";
 import { distanceMiles } from "@little-food-truck/shared";
 import { desc, eq, isNull, sql } from "drizzle-orm";
@@ -35,6 +36,7 @@ type TruckRow = {
   verified: boolean;
   website: string | null;
   phone: string | null;
+  state: string | null;
 };
 
 function baseQuery() {
@@ -55,6 +57,7 @@ function baseQuery() {
       verified: truckProfiles.verified,
       website: truckProfiles.website,
       phone: truckProfiles.phone,
+      state: truckProfiles.state,
     })
     .from(truckProfiles)
     .innerJoin(users, eq(users.id, truckProfiles.userId));
@@ -109,9 +112,16 @@ async function hydrate(rows: TruckRow[]): Promise<Truck[]> {
       verified: row.verified,
       website: row.website,
       phone: row.phone,
+      state: row.state as UsStateCode | null,
     };
   });
 }
+
+// Default page size for the paginated (`page` set) browse-list call — see
+// routes/trucks.ts. The `limit`-only calls (trending/newest highlight
+// strips) don't go through paging at all, so this constant doesn't affect
+// them.
+export const DEFAULT_PAGE_SIZE = 24;
 
 export type TruckListFilter = {
   cuisine?: CuisineType;
@@ -119,8 +129,18 @@ export type TruckListFilter = {
   near?: { lat: number; lng: number; radiusMiles: number };
   openOnly?: boolean;
   dietaryTags?: DietaryTag[];
+  state?: UsStateCode;
   sort?: TruckSortType;
+  // Caps the result with no pagination metadata — used by the trending/
+  // newest highlight strips, which just want "top N," not a page.
   limit?: number;
+  // 1-based. When set, the result is sliced to `pageSize` (default
+  // DEFAULT_PAGE_SIZE) starting at this page, and `total` in the return
+  // value reflects the full filtered count (pre-slice) so the caller can
+  // compute page count / hasMore. Mutually exclusive with `limit` in
+  // practice — routes/trucks.ts never sends both.
+  page?: number;
+  pageSize?: number;
 };
 
 async function trucksWithDietaryTags(tags: DietaryTag[]): Promise<Set<string>> {
@@ -135,11 +155,16 @@ async function trucksWithDietaryTags(tags: DietaryTag[]): Promise<Set<string>> {
   return matching;
 }
 
-export async function listTrucks(filter: TruckListFilter = {}): Promise<Truck[]> {
+export async function listTrucks(
+  filter: TruckListFilter = {},
+): Promise<{ trucks: Truck[]; total: number }> {
   let trucks = await hydrate(await baseQuery());
 
   if (filter.cuisine) {
     trucks = trucks.filter((t) => t.cuisine === filter.cuisine);
+  }
+  if (filter.state) {
+    trucks = trucks.filter((t) => t.state === filter.state);
   }
   if (filter.search) {
     const q = filter.search.toLowerCase();
@@ -185,11 +210,17 @@ export async function listTrucks(filter: TruckListFilter = {}): Promise<Truck[]>
       break;
   }
 
-  if (filter.limit != null) {
+  const total = trucks.length;
+
+  if (filter.page != null) {
+    const pageSize = filter.pageSize ?? DEFAULT_PAGE_SIZE;
+    const start = (filter.page - 1) * pageSize;
+    trucks = trucks.slice(start, start + pageSize);
+  } else if (filter.limit != null) {
     trucks = trucks.slice(0, filter.limit);
   }
 
-  return trucks;
+  return { trucks, total };
 }
 
 export async function getTruck(truckId: string): Promise<Truck | null> {

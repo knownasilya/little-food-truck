@@ -17,8 +17,19 @@
 
 	let container: HTMLDivElement;
 	let map: maplibregl.Map | undefined;
-	let markers: maplibregl.Marker[] = [];
+	let userMarker: maplibregl.Marker | undefined;
+	// Keyed by "truck-<id>" or "cluster-<cluster_id>" — reused across
+	// updateMarkers() calls so an unchanged point's DOM element (and its
+	// open popup, if any) isn't torn down and rebuilt on every pan/zoom.
+	let markersByKey = new Map<string, maplibregl.Marker>();
+	let trucksById = new Map<string, Truck>();
 	let ready = $state(false);
+
+	const SOURCE_ID = 'trucks';
+	// How close "zoom closer to the user" actually zooms — well past the
+	// fitBounds-across-everything cap below, close enough to read individual
+	// nearby streets/trucks without being pinned to one block.
+	const USER_ZOOM = 13;
 
 	function escapeHtml(value: string): string {
 		return value.replace(
@@ -50,6 +61,23 @@
 		return el;
 	}
 
+	// Size/darken step with cluster size so a cluster of 50 trucks visibly
+	// reads as "bigger" than one of 3 — same idea as the default
+	// Mapbox/MapLibre cluster-circle examples, just rendered as an HTML
+	// marker instead of a native circle+symbol layer so it can reuse this
+	// component's existing DOM-marker/popup machinery.
+	function clusterMarkerEl(count: number): HTMLDivElement {
+		const el = document.createElement('div');
+		const size = count < 10 ? 36 : count < 50 ? 44 : 52;
+		el.className =
+			'flex cursor-pointer items-center justify-center rounded-full border-2 border-white bg-orange-600 font-semibold text-white shadow-md';
+		el.style.width = `${size}px`;
+		el.style.height = `${size}px`;
+		el.style.fontSize = size >= 44 ? '14px' : '13px';
+		el.textContent = count > 99 ? '99+' : String(count);
+		return el;
+	}
+
 	function userMarkerEl(): HTMLDivElement {
 		const el = document.createElement('div');
 		el.className =
@@ -74,34 +102,113 @@
 		`;
 	}
 
-	function renderMarkers() {
-		if (!map) return;
-		for (const marker of markers) marker.remove();
-		markers = [];
+	// A plain object shape, not the `geojson` package's types — avoids
+	// depending on whatever ambient GeoJSON types maplibre-gl happens to
+	// re-export; `as never` at the two call sites below satisfies
+	// `GeoJSONSourceSpecification.data`'s stricter type without pulling in
+	// an extra type dependency for a shape this simple.
+	type TruckFeatureCollection = {
+		type: 'FeatureCollection';
+		features: {
+			type: 'Feature';
+			properties: { id: string };
+			geometry: { type: 'Point'; coordinates: [number, number] };
+		}[];
+	};
 
+	function truckFeatureCollection(list: Truck[]): TruckFeatureCollection {
+		return {
+			type: 'FeatureCollection',
+			features: list
+				.filter((t) => t.lat != null && t.lng != null)
+				.map((t) => ({
+					type: 'Feature',
+					properties: { id: t.id },
+					geometry: { type: 'Point', coordinates: [t.lng as number, t.lat as number] }
+				}))
+		};
+	}
+
+	// The clustering itself (grouping nearby points at the current zoom) is
+	// computed by MapLibre/supercluster inside the GeoJSON source — this
+	// just mirrors whatever it currently reports into DOM markers, reusing
+	// this component's existing rich-HTML truck markers/popups for
+	// unclustered points (which native circle/symbol layers can't render).
+	// Standard "HTML markers on a clustered source" pattern; see MapLibre's
+	// own cluster-html example.
+	function updateMarkers() {
+		if (!map || !map.getSource(SOURCE_ID)) return;
+		const seen = new Set<string>();
+		const features = map.querySourceFeatures(SOURCE_ID);
+
+		for (const feature of features) {
+			if (feature.geometry.type !== 'Point') continue;
+			const [lng, lat] = feature.geometry.coordinates as [number, number];
+			const props = feature.properties as {
+				cluster?: boolean;
+				cluster_id?: number;
+				point_count?: number;
+				id?: string;
+			};
+
+			if (props.cluster && props.cluster_id != null) {
+				const key = `cluster-${props.cluster_id}`;
+				// querySourceFeatures can return the same feature more than
+				// once (once per tile it intersects) — skip repeats.
+				if (seen.has(key)) continue;
+				seen.add(key);
+
+				let marker = markersByKey.get(key);
+				if (!marker) {
+					const clusterId = props.cluster_id;
+					const el = clusterMarkerEl(props.point_count ?? 0);
+					el.addEventListener('click', () => {
+						const source = map!.getSource(SOURCE_ID) as maplibregl.GeoJSONSource;
+						source
+							.getClusterExpansionZoom(clusterId)
+							.then((zoom) => map!.easeTo({ center: [lng, lat], zoom }))
+							.catch(() => {});
+					});
+					marker = new maplibregl.Marker({ element: el }).setLngLat([lng, lat]);
+					markersByKey.set(key, marker);
+				} else {
+					marker.setLngLat([lng, lat]);
+				}
+			} else if (props.id) {
+				const key = `truck-${props.id}`;
+				if (seen.has(key)) continue;
+				seen.add(key);
+
+				if (!markersByKey.has(key)) {
+					const truck = trucksById.get(props.id);
+					if (!truck) continue;
+					const marker = new maplibregl.Marker({ element: truckMarkerEl(truck) })
+						.setLngLat([lng, lat])
+						.setPopup(new maplibregl.Popup({ offset: 20 }).setHTML(popupHtml(truck)));
+					markersByKey.set(key, marker);
+				}
+			}
+		}
+
+		for (const [key, marker] of markersByKey) {
+			if (seen.has(key)) {
+				marker.addTo(map);
+			} else {
+				marker.remove();
+				markersByKey.delete(key);
+			}
+		}
+	}
+
+	function fitToTrucks() {
+		if (!map) return;
 		const bounds = new maplibregl.LngLatBounds();
 		let hasBounds = false;
-
 		for (const truck of trucks) {
 			if (truck.lat == null || truck.lng == null) continue;
-			const marker = new maplibregl.Marker({ element: truckMarkerEl(truck) })
-				.setLngLat([truck.lng, truck.lat])
-				.setPopup(new maplibregl.Popup({ offset: 20 }).setHTML(popupHtml(truck)))
-				.addTo(map);
-			markers.push(marker);
 			bounds.extend([truck.lng, truck.lat]);
 			hasBounds = true;
 		}
-
-		if (userLocation) {
-			const marker = new maplibregl.Marker({ element: userMarkerEl() })
-				.setLngLat([userLocation.lng, userLocation.lat])
-				.addTo(map);
-			markers.push(marker);
-			bounds.extend([userLocation.lng, userLocation.lat]);
-			hasBounds = true;
-		}
-
 		if (hasBounds) {
 			map.fitBounds(bounds, { padding: 56, maxZoom: 14, duration: 0 });
 		}
@@ -117,7 +224,39 @@
 		});
 		map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
 		map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+
 		map.on('load', () => {
+			// The compact attribution control re-expands itself once the
+			// basemap tile source's attribution text becomes known (which
+			// happens asynchronously as the style loads) — collapse it back
+			// down to just the "i" icon only after that settles.
+			container.querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show');
+
+			map!.addSource(SOURCE_ID, {
+				type: 'geojson',
+				data: truckFeatureCollection(trucks) as never,
+				cluster: true,
+				clusterMaxZoom: 14,
+				clusterRadius: 50
+			});
+			// MapLibre only loads/clusters tiles for a source that's actually
+			// referenced by a style layer — with only HTML markers reading
+			// back via querySourceFeatures() and no layer, the source is
+			// never marked "used" and no tiles (or clusters) are ever
+			// computed. This layer exists purely to keep the source active;
+			// it renders nothing.
+			map!.addLayer({
+				id: `${SOURCE_ID}-layer`,
+				type: 'circle',
+				source: SOURCE_ID,
+				paint: { 'circle-radius': 0, 'circle-opacity': 0 }
+			});
+			map!.on('sourcedata', (e) => {
+				if (e.sourceId !== SOURCE_ID || !e.isSourceLoaded) return;
+				updateMarkers();
+			});
+			map!.on('moveend', updateMarkers);
+			fitToTrucks();
 			ready = true;
 		});
 	});
@@ -126,11 +265,32 @@
 		map?.remove();
 	});
 
+	// Trucks list changed (filters, a fresh load, ...) — refresh the
+	// clustered source and re-fit the view to whatever's now showing.
 	$effect(() => {
 		if (!ready) return;
 		trucks;
-		userLocation;
-		renderMarkers();
+		trucksById = new Map(trucks.map((t) => [t.id, t]));
+		const source = map?.getSource(SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+		source?.setData(truckFeatureCollection(trucks) as never);
+		fitToTrucks();
+	});
+
+	// userLocation changing is its own effect, deliberately separate from
+	// the trucks-driven one above: every way location becomes available
+	// (the "Center on me" button, the "Near me" filter, sorting by
+	// distance) should zoom in close on the user, not widen back out to a
+	// bounds-fit across every currently-listed truck.
+	$effect(() => {
+		if (!ready || !map) return;
+		userMarker?.remove();
+		userMarker = undefined;
+		if (userLocation) {
+			userMarker = new maplibregl.Marker({ element: userMarkerEl() })
+				.setLngLat([userLocation.lng, userLocation.lat])
+				.addTo(map);
+			map.flyTo({ center: [userLocation.lng, userLocation.lat], zoom: USER_ZOOM });
+		}
 	});
 </script>
 

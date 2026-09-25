@@ -7,6 +7,14 @@ export default defineConfig({
 	server: {
 		port: 5173
 	},
+	// Vite's dep optimizer pre-bundles maplibre-gl's main thread code but
+	// misses its worker chunk (maplibre-gl-worker.mjs), which 404s at
+	// runtime — breaking anything that needs the worker (e.g. clustering on
+	// a GeoJSON source, which never finishes loading without it). Excluding
+	// the package from pre-bundling avoids the broken split.
+	optimizeDeps: {
+		exclude: ['maplibre-gl']
+	},
 	// The `(app)` route group is a fully client-rendered SPA (ssr:false — see
 	// its +layout.ts): the same static build embeds in Tauri for mobile, and
 	// every app page reads its session via a client-side fetch with
