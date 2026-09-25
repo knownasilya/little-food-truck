@@ -1,4 +1,21 @@
-import type * as maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
+import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+
+// maplibre-gl resolves its own worker script at runtime by string-concatenating
+// a filename onto its *own* module URL (not a static `new URL(literal,
+// import.meta.url)` Vite/Rollup can detect and bundle) — so the production
+// build never emits maplibre-gl-worker.mjs as an asset, and the map silently
+// hangs forever the moment anything needs the worker (e.g. clustering).
+// A plain `?url` import isn't enough either: it copies the file verbatim
+// without following ITS OWN internal import of a sibling chunk
+// (maplibre-gl-shared.mjs), so the worker script 404s on that sibling the
+// instant it runs and silently never responds — no console error, no
+// network-tab flag, just every setData() call hanging forever. `?worker&url`
+// runs the file through Vite's worker-bundling pipeline instead, which
+// resolves that transitive import too, and gives back a URL that actually
+// works. setWorkerUrl() then points maplibre at it explicitly instead of
+// the (wrong) URL it would otherwise guess at runtime.
+maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
 // Free basemap tiles from Esri's public World Street Map service — no API
 // key/signup needed, and no watermark, unlike the free tiers of most

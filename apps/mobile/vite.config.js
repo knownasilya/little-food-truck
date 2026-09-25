@@ -16,6 +16,12 @@ export default defineConfig(() => ({
   optimizeDeps: {
     exclude: ["maplibre-gl"],
   },
+  // maplibre-gl's worker is itself an ES module (it has its own imports),
+  // but Vite's default worker output format is 'iife', which can't
+  // represent that — see the matching comment in apps/web/vite.config.ts.
+  worker: {
+    format: /** @type {const} */ ("es"),
+  },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

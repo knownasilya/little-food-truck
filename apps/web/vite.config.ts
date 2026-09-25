@@ -15,6 +15,15 @@ export default defineConfig({
 	optimizeDeps: {
 		exclude: ['maplibre-gl']
 	},
+	// maplibre-gl's worker is itself an ES module (it has its own imports),
+	// but Vite's default worker output format is 'iife', which can't
+	// represent that — the production build silently fails to emit the
+	// worker chunk at all when left on the default (clustering, which needs
+	// the worker, then just hangs forever with no error). This is
+	// MapLibre's own documented Vite requirement.
+	worker: {
+		format: 'es'
+	},
 	// The `(app)` route group is a fully client-rendered SPA (ssr:false — see
 	// its +layout.ts): the same static build embeds in Tauri for mobile, and
 	// every app page reads its session via a client-side fetch with
