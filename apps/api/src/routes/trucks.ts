@@ -12,7 +12,7 @@ import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { db } from "../db/client.js";
 import { cateringRequests, favorites, reviews, users } from "../db/schema.js";
-import { requireRole, withAuth } from "../lib/auth.js";
+import { requireAuth, requireRole, withAuth } from "../lib/auth.js";
 import { createApp } from "../lib/context.js";
 import { newId } from "../lib/id.js";
 import {
@@ -185,6 +185,7 @@ export const trucksRoute = createApp()
   })
   .post(
     "/:id/catering-request",
+    requireAuth,
     zValidator("json", cateringRequestInputSchema),
     async (c) => {
       const truckId = c.req.param("id");

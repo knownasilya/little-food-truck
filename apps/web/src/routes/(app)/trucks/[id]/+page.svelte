@@ -260,7 +260,7 @@
 					{favorited ? 'Favorited' : 'Add to favorites'}
 				</button>
 			{/if}
-			{#if auth.session?.role !== 'truck' && truck.claimed}
+			{#if auth.session && auth.session.role !== 'truck' && truck.claimed}
 				<button
 					class="flex items-center gap-1.5 rounded border border-stone-300 px-4 py-2 text-stone-700 hover:bg-stone-100"
 					onclick={() => (showCateringForm = !showCateringForm)}
@@ -298,6 +298,11 @@
 			<p class="mt-3 rounded bg-stone-50 p-3 text-sm text-stone-500">
 				This truck hasn't been claimed by its owner yet, so catering requests aren't available.
 			</p>
+		{:else if !auth.session}
+			<div class="mt-3 flex items-center justify-between rounded bg-orange-50 p-3 text-sm">
+				<span>Sign in to request catering.</span>
+				<a href="/sign-in" class="font-medium text-orange-700">Sign in</a>
+			</div>
 		{:else if cateringSubmitted}
 			<p class="mt-3 rounded bg-green-50 p-3 text-sm text-green-700">
 				Request sent! {truck.name} will reach out at the email you gave.

@@ -66,6 +66,30 @@ export async function createOpenTruckViaApi(
 }
 
 /**
+ * Signs up a customer directly through the API — pass `page.request` (not
+ * the standalone `request` fixture) so the session cookie this sets lands
+ * on `page`'s own browser context, leaving `page` signed in for whatever
+ * UI the test drives next. Faster than filling out the sign-up form when
+ * the test isn't actually covering sign-up itself.
+ */
+export async function signUpCustomerViaApi(
+  request: APIRequestContext,
+  namePrefix: string,
+): Promise<{ email: string; name: string }> {
+  const email = uniqueEmail(namePrefix.toLowerCase().replace(/\s+/g, "-"));
+  const name = uniqueName(namePrefix);
+
+  const res = await request.post(`${API_URL}/api/auth/sign-up`, {
+    data: { email, password: TEST_PASSWORD, role: "customer", displayName: name },
+  });
+  if (!res.ok()) {
+    throw new Error(`Customer sign-up setup failed: ${res.status()} ${await res.text()}`);
+  }
+
+  return { email, name };
+}
+
+/**
  * Creates an unclaimed truck listing directly through the admin API (not
  * the UI) — same account shape claim.spec.ts drives through the admin
  * page, just faster/isolated for specs that only need an unclaimed
