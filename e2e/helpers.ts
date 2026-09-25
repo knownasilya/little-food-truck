@@ -64,3 +64,34 @@ export async function createOpenTruckViaApi(
   // this session being left signed-in doesn't leak into the actual test.
   return { id, name };
 }
+
+/**
+ * Creates an unclaimed truck listing directly through the admin API (not
+ * the UI) — same account shape claim.spec.ts drives through the admin
+ * page, just faster/isolated for specs that only need an unclaimed
+ * fixture truck to exist, not the claim flow itself. Depends on the seeded
+ * admin@example.com account, same as claim.spec.ts.
+ */
+export async function createUnclaimedTruckViaApi(
+  request: APIRequestContext,
+  namePrefix: string,
+): Promise<{ id: string; name: string }> {
+  const name = uniqueName(namePrefix);
+
+  const signInRes = await request.post(`${API_URL}/api/auth/sign-in`, {
+    data: { email: "admin@example.com", password: "password123" },
+  });
+  if (!signInRes.ok()) {
+    throw new Error(`Admin sign-in setup failed: ${signInRes.status()} ${await signInRes.text()}`);
+  }
+
+  const createRes = await request.post(`${API_URL}/api/admin/trucks`, {
+    data: { name, description: "E2E unclaimed test fixture truck", cuisine: "mexican" },
+  });
+  if (!createRes.ok()) {
+    throw new Error(`Unclaimed truck setup failed: ${createRes.status()} ${await createRes.text()}`);
+  }
+  const { id } = (await createRes.json()) as { id: string };
+
+  return { id, name };
+}

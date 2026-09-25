@@ -192,6 +192,11 @@ export const trucksRoute = createApp()
 
       const truck = await getTruck(truckId);
       if (!truck) throw new HTTPException(404, { message: "Truck not found" });
+      if (!truck.claimed) {
+        throw new HTTPException(400, {
+          message: "This truck hasn't been claimed by its owner yet, so it can't take catering requests.",
+        });
+      }
 
       await db.insert(cateringRequests).values({
         id: newId(),

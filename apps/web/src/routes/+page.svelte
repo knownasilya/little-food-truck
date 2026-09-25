@@ -41,7 +41,8 @@
 			verified: true,
 			website: null,
 			phone: null,
-			state: 'TX'
+			state: 'TX',
+			claimed: true
 		},
 		{
 			id: 'preview-2',
@@ -63,7 +64,8 @@
 			verified: false,
 			website: null,
 			phone: null,
-			state: 'TX'
+			state: 'TX',
+			claimed: true
 		},
 		{
 			id: 'preview-3',
@@ -85,7 +87,8 @@
 			verified: false,
 			website: null,
 			phone: null,
-			state: 'TX'
+			state: 'TX',
+			claimed: true
 		}
 	];
 </script>

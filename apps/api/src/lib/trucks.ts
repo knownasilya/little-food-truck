@@ -37,6 +37,7 @@ type TruckRow = {
   website: string | null;
   phone: string | null;
   state: string | null;
+  claimedAt: Date | null;
 };
 
 function baseQuery() {
@@ -58,6 +59,7 @@ function baseQuery() {
       website: truckProfiles.website,
       phone: truckProfiles.phone,
       state: truckProfiles.state,
+      claimedAt: truckProfiles.claimedAt,
     })
     .from(truckProfiles)
     .innerJoin(users, eq(users.id, truckProfiles.userId));
@@ -113,6 +115,7 @@ async function hydrate(rows: TruckRow[]): Promise<Truck[]> {
       website: row.website,
       phone: row.phone,
       state: row.state as UsStateCode | null,
+      claimed: row.claimedAt !== null,
     };
   });
 }

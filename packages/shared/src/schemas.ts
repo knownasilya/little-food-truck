@@ -183,6 +183,10 @@ export const truckSchema = z.object({
   website: z.string().nullable(),
   phone: z.string().nullable(),
   state: usStateCode.nullable(),
+  // False for a truck an admin listed but whose owner hasn't claimed it
+  // yet (see the truck-claim flow) — used to gate actions that need a
+  // real owner behind it, like catering requests.
+  claimed: z.boolean(),
 });
 export type Truck = z.infer<typeof truckSchema>;
 
